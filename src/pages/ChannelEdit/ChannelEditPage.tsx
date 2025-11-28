@@ -6,7 +6,8 @@ import { useChannelStore } from "../../stores/channelStore";
 import type {
   Channel,
   SupportedPlatform,
-  SupportedLanguage
+  SupportedLanguage,
+  GenerationMode
 } from "../../domain/channel";
 
 const PLATFORMS: { value: SupportedPlatform; label: string }[] = [
@@ -84,7 +85,11 @@ const ChannelEditPage = () => {
     if (channels.length > 0 && channelId) {
       const found = channels.find((c) => c.id === channelId);
       if (found) {
-        setChannel(found);
+        // Убеждаемся, что generationMode установлен (для старых каналов)
+        setChannel({
+          ...found,
+          generationMode: found.generationMode || "script"
+        });
         setLoading(false);
       }
     }
@@ -344,6 +349,52 @@ const ChannelEditPage = () => {
                 className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none transition placeholder:text-slate-500 focus:border-brand focus:ring-2 focus:ring-brand/40"
                 placeholder="Любые дополнительные требования к сценариям..."
               />
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-slate-200">
+                Режим генерации *
+              </label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setChannel({
+                      ...channel,
+                      generationMode: "script"
+                    })
+                  }
+                  className={`rounded-xl border px-4 py-3 text-left transition ${
+                    (channel.generationMode || "script") === "script"
+                      ? "border-brand bg-brand/10 text-white"
+                      : "border-white/10 bg-slate-950/60 text-slate-300 hover:border-brand/40"
+                  }`}
+                >
+                  <div className="font-semibold">Сценарий</div>
+                  <div className="mt-1 text-xs text-slate-400">
+                    Только подробный сценарий
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setChannel({
+                      ...channel,
+                      generationMode: "prompt"
+                    })
+                  }
+                  className={`rounded-xl border px-4 py-3 text-left transition ${
+                    channel.generationMode === "prompt"
+                      ? "border-brand bg-brand/10 text-white"
+                      : "border-white/10 bg-slate-950/60 text-slate-300 hover:border-brand/40"
+                  }`}
+                >
+                  <div className="font-semibold">Сценарий + промпт для видео</div>
+                  <div className="mt-1 text-xs text-slate-400">
+                    Сценарий + VIDEO_PROMPT для Sora/Veo
+                  </div>
+                </button>
+              </div>
             </div>
 
             <div className="flex items-center justify-end gap-4 pt-4">

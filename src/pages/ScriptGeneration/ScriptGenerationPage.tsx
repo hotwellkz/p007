@@ -12,7 +12,9 @@ import { useAuthStore } from "../../stores/authStore";
 import { useChannelStore } from "../../stores/channelStore";
 import {
   generateShortScript,
-  type GeneratedScript
+  generateDetailedScripts,
+  type GeneratedScript,
+  type GenerationResponse
 } from "../../services/openaiScriptGenerator";
 import type { Channel } from "../../domain/channel";
 
@@ -30,7 +32,10 @@ const ScriptGenerationPage = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [script, setScript] = useState<GeneratedScript | null>(null);
+  const [detailedResult, setDetailedResult] =
+    useState<GenerationResponse | null>(null);
   const [copied, setCopied] = useState(false);
+  const [copiedVideoPrompt, setCopiedVideoPrompt] = useState(false);
 
   useEffect(() => {
     if (!user?.uid || !channelId) {
@@ -76,10 +81,20 @@ const ScriptGenerationPage = () => {
     setLoading(true);
     setError(null);
     setScript(null);
+    setDetailedResult(null);
 
     try {
-      const result = await generateShortScript(channel, idea.trim());
-      setScript(result);
+      const mode = channel.generationMode || "script";
+      
+      if (mode === "prompt") {
+        // Используем новую функцию для детальных сценариев
+        const result = await generateDetailedScripts(channel, idea.trim());
+        setDetailedResult(result);
+      } else {
+        // Старый формат для обратной совместимости
+        const result = await generateShortScript(channel, idea.trim());
+        setScript(result);
+      }
     } catch (err) {
       setError(
         err instanceof Error
@@ -92,6 +107,30 @@ const ScriptGenerationPage = () => {
   };
 
   const handleCopy = async () => {
+    if (detailedResult) {
+      // Копирование детальных сценариев
+      const textToCopy = detailedResult.scenarios
+        .map(
+          (scenario) =>
+            `${scenario.title} (${scenario.durationSeconds} сек):\n\n${scenario.steps
+              .map(
+                (step) =>
+                  `${step.secondFrom}-${step.secondTo}с: ${step.description}${step.dialog.length > 0 ? `\n${step.dialog.map((d) => `${d.character}: "${d.text}"`).join("\n")}` : ""}`
+              )
+              .join("\n\n")}`
+        )
+        .join("\n\n---\n\n");
+
+      try {
+        await navigator.clipboard.writeText(textToCopy);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch (err) {
+        setError("Не удалось скопировать в буфер обмена");
+      }
+      return;
+    }
+
     if (!script) return;
 
     const textToCopy = `СЦЕНАРИЙ ДЛЯ ${channel?.name || "ВИДЕО"}
@@ -125,7 +164,20 @@ ${script.sections.sounds || "—"}`;
 
   const handleRegenerate = () => {
     setScript(null);
+    setDetailedResult(null);
     setError(null);
+  };
+
+  const handleCopyVideoPrompt = async () => {
+    if (!detailedResult?.videoPrompt) return;
+
+    try {
+      await navigator.clipboard.writeText(detailedResult.videoPrompt);
+      setCopiedVideoPrompt(true);
+      setTimeout(() => setCopiedVideoPrompt(false), 2000);
+    } catch (err) {
+      setError("Не удалось скопировать промпт в буфер обмена");
+    }
   };
 
   if (!channel) {
@@ -231,10 +283,14 @@ ${script.sections.sounds || "—"}`;
           </form>
         )}
 
-        {script && (
+        {(script || detailedResult) && (
           <div className="space-y-6">
             <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-slate-900/60 p-6">
-              <h2 className="text-xl font-semibold">Сгенерированный сценарий</h2>
+              <h2 className="text-xl font-semibold">
+                {detailedResult
+                  ? "Сгенерированные сценарии"
+                  : "Сгенерированный сценарий"}
+              </h2>
               <div className="flex gap-3">
                 <button
                   type="button"
@@ -255,82 +311,171 @@ ${script.sections.sounds || "—"}`;
               </div>
             </div>
 
-            <div className="space-y-4">
-              {script.sections.hook && (
-                <div className="rounded-xl border border-white/10 bg-slate-900/60 p-6">
-                  <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-brand-light">
-                    🎣 Завязка (0-3 сек)
-                  </h3>
-                  <p className="text-slate-200 whitespace-pre-wrap">
-                    {script.sections.hook}
-                  </p>
-                </div>
-              )}
+            {/* Старый формат (для обратной совместимости) */}
+            {script && (
+              <div className="space-y-4">
+                {script.sections.hook && (
+                  <div className="rounded-xl border border-white/10 bg-slate-900/60 p-6">
+                    <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-brand-light">
+                      🎣 Завязка (0-3 сек)
+                    </h3>
+                    <p className="text-slate-200 whitespace-pre-wrap">
+                      {script.sections.hook}
+                    </p>
+                  </div>
+                )}
 
-              {script.sections.mainAction && (
-                <div className="rounded-xl border border-white/10 bg-slate-900/60 p-6">
-                  <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-brand-light">
-                    🎬 Основное действие
-                  </h3>
-                  <p className="text-slate-200 whitespace-pre-wrap">
-                    {script.sections.mainAction}
-                  </p>
-                </div>
-              )}
+                {script.sections.mainAction && (
+                  <div className="rounded-xl border border-white/10 bg-slate-900/60 p-6">
+                    <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-brand-light">
+                      🎬 Основное действие
+                    </h3>
+                    <p className="text-slate-200 whitespace-pre-wrap">
+                      {script.sections.mainAction}
+                    </p>
+                  </div>
+                )}
 
-              {script.sections.finale && (
-                <div className="rounded-xl border border-white/10 bg-slate-900/60 p-6">
-                  <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-brand-light">
-                    🎯 Финал
-                  </h3>
-                  <p className="text-slate-200 whitespace-pre-wrap">
-                    {script.sections.finale}
-                  </p>
-                </div>
-              )}
+                {script.sections.finale && (
+                  <div className="rounded-xl border border-white/10 bg-slate-900/60 p-6">
+                    <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-brand-light">
+                      🎯 Финал
+                    </h3>
+                    <p className="text-slate-200 whitespace-pre-wrap">
+                      {script.sections.finale}
+                    </p>
+                  </div>
+                )}
 
-              {script.sections.onScreenText && (
-                <div className="rounded-xl border border-white/10 bg-slate-900/60 p-6">
-                  <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-brand-light">
-                    📝 Текст на экране
-                  </h3>
-                  <p className="text-slate-200 whitespace-pre-wrap">
-                    {script.sections.onScreenText}
-                  </p>
-                </div>
-              )}
+                {script.sections.onScreenText && (
+                  <div className="rounded-xl border border-white/10 bg-slate-900/60 p-6">
+                    <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-brand-light">
+                      📝 Текст на экране
+                    </h3>
+                    <p className="text-slate-200 whitespace-pre-wrap">
+                      {script.sections.onScreenText}
+                    </p>
+                  </div>
+                )}
 
-              {script.sections.voiceover && (
-                <div className="rounded-xl border border-white/10 bg-slate-900/60 p-6">
-                  <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-brand-light">
-                    🎤 Реплики / Голос за кадром
-                  </h3>
-                  <p className="text-slate-200 whitespace-pre-wrap">
-                    {script.sections.voiceover}
-                  </p>
-                </div>
-              )}
+                {script.sections.voiceover && (
+                  <div className="rounded-xl border border-white/10 bg-slate-900/60 p-6">
+                    <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-brand-light">
+                      🎤 Реплики / Голос за кадром
+                    </h3>
+                    <p className="text-slate-200 whitespace-pre-wrap">
+                      {script.sections.voiceover}
+                    </p>
+                  </div>
+                )}
 
-              {script.sections.sounds && (
-                <div className="rounded-xl border border-white/10 bg-slate-900/60 p-6">
-                  <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-brand-light">
-                    🔊 Звуки / Музыка
-                  </h3>
-                  <p className="text-slate-200 whitespace-pre-wrap">
-                    {script.sections.sounds}
-                  </p>
-                </div>
-              )}
-            </div>
+                {script.sections.sounds && (
+                  <div className="rounded-xl border border-white/10 bg-slate-900/60 p-6">
+                    <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-brand-light">
+                      🔊 Звуки / Музыка
+                    </h3>
+                    <p className="text-slate-200 whitespace-pre-wrap">
+                      {script.sections.sounds}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
 
-            <div className="rounded-xl border border-white/10 bg-slate-900/60 p-6">
-              <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-400">
-                Исходный JSON
-              </h3>
-              <pre className="overflow-x-auto rounded-lg bg-slate-950/60 p-4 text-xs text-slate-300">
-                {script.rawText}
-              </pre>
-            </div>
+            {/* Новый формат (детальные сценарии) */}
+            {detailedResult && (
+              <div className="space-y-6">
+                {detailedResult.scenarios.map((scenario, scenarioIndex) => (
+                  <div
+                    key={scenarioIndex}
+                    className="rounded-xl border border-white/10 bg-slate-900/60 p-6"
+                  >
+                    <div className="mb-4 flex items-center justify-between">
+                      <h3 className="text-lg font-semibold text-brand-light">
+                        {scenario.title}
+                      </h3>
+                      <span className="rounded-full bg-brand/20 px-3 py-1 text-xs font-semibold text-brand-light">
+                        {scenario.durationSeconds} сек
+                      </span>
+                    </div>
+
+                    <div className="space-y-4">
+                      {scenario.steps.map((step, stepIndex) => (
+                        <div
+                          key={stepIndex}
+                          className="rounded-lg border border-white/5 bg-slate-800/40 p-4"
+                        >
+                          <div className="mb-2 flex items-center gap-2">
+                            <span className="rounded bg-brand/20 px-2 py-1 text-xs font-semibold text-brand-light">
+                              {step.secondFrom}-{step.secondTo}с
+                            </span>
+                          </div>
+                          <p className="mb-2 text-sm text-slate-200">
+                            {step.description}
+                          </p>
+                          {step.dialog.length > 0 && (
+                            <div className="mt-3 space-y-1 border-t border-white/5 pt-3">
+                              {step.dialog.map((line, dialogIndex) => (
+                                <div
+                                  key={dialogIndex}
+                                  className="text-sm text-slate-300"
+                                >
+                                  <span className="font-semibold text-brand-light">
+                                    {line.character}:
+                                  </span>{" "}
+                                  <span className="italic">"{line.text}"</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+
+                {/* VIDEO_PROMPT блок (только для режима "prompt") */}
+                {detailedResult.videoPrompt && (
+                  <div className="rounded-xl border border-brand/30 bg-brand/5 p-6">
+                    <div className="mb-4 flex items-center justify-between">
+                      <h3 className="text-lg font-semibold text-brand-light">
+                        🎬 Промпт для генерации видео
+                      </h3>
+                      <button
+                        type="button"
+                        onClick={handleCopyVideoPrompt}
+                        className="flex items-center gap-2 rounded-lg border border-brand/30 bg-brand/10 px-3 py-1.5 text-xs font-medium text-brand-light transition hover:bg-brand/20"
+                      >
+                        <Copy size={14} />
+                        {copiedVideoPrompt ? "Скопировано!" : "Копировать"}
+                      </button>
+                    </div>
+                    <textarea
+                      readOnly
+                      value={detailedResult.videoPrompt}
+                      rows={12}
+                      className="w-full rounded-lg border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-slate-200 outline-none"
+                    />
+                    <p className="mt-2 text-xs text-slate-400">
+                      Готовый промпт для Sora / Veo 3.1 Fast. Скопируйте и
+                      используйте для генерации видео.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Исходный JSON (только для старого формата) */}
+            {script && (
+              <div className="rounded-xl border border-white/10 bg-slate-900/60 p-6">
+                <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-400">
+                  Исходный JSON
+                </h3>
+                <pre className="overflow-x-auto rounded-lg bg-slate-950/60 p-4 text-xs text-slate-300">
+                  {script.rawText}
+                </pre>
+              </div>
+            )}
           </div>
         )}
       </div>

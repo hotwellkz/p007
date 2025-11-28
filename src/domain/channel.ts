@@ -12,6 +12,8 @@ export type SupportedPlatform =
 
 export type SupportedLanguage = "ru" | "en" | "kk";
 
+export type GenerationMode = "script" | "prompt";
+
 export interface Channel {
   id: string;
   name: string;
@@ -23,6 +25,7 @@ export interface Channel {
   tone: string;
   blockedTopics: string;
   extraNotes?: string;
+  generationMode?: GenerationMode; // По умолчанию "script" для обратной совместимости
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
@@ -39,6 +42,7 @@ export const channelConverter: FirestoreDataConverter<Channel> = {
     const { id, ...rest } = channel;
     return {
       ...rest,
+      generationMode: channel.generationMode || "script", // Значение по умолчанию
       createdAt: channel.createdAt ?? (serverTimestamp() as unknown as Timestamp),
       updatedAt: serverTimestamp() as unknown as Timestamp
     };
@@ -47,6 +51,7 @@ export const channelConverter: FirestoreDataConverter<Channel> = {
     const data = snapshot.data(options) as ChannelFirestoreData;
     return {
       id: snapshot.id,
+      generationMode: data.generationMode || "script", // Значение по умолчанию для старых каналов
       ...data
     };
   }
@@ -65,6 +70,7 @@ export const createEmptyChannel = (): Channel => {
     tone: "",
     blockedTopics: "",
     extraNotes: "",
+    generationMode: "script",
     createdAt: now,
     updatedAt: now
   };

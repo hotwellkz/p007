@@ -6,7 +6,8 @@ import { useChannelStore } from "../../stores/channelStore";
 import type {
   ChannelCreatePayload,
   SupportedPlatform,
-  SupportedLanguage
+  SupportedLanguage,
+  GenerationMode
 } from "../../domain/channel";
 import { createEmptyChannel } from "../../domain/channel";
 
@@ -19,7 +20,8 @@ const STEPS = [
   { id: 6, title: "Целевая аудитория" },
   { id: 7, title: "Тон" },
   { id: 8, title: "Запрещённые темы" },
-  { id: 9, title: "Доп. пожелания" }
+  { id: 9, title: "Режим генерации" },
+  { id: 10, title: "Доп. пожелания" }
 ];
 
 const PLATFORMS: { value: SupportedPlatform; label: string }[] = [
@@ -70,7 +72,8 @@ const ChannelWizardPage = () => {
       audience: empty.audience,
       tone: empty.tone,
       blockedTopics: empty.blockedTopics,
-      extraNotes: empty.extraNotes
+      extraNotes: empty.extraNotes,
+      generationMode: empty.generationMode || "script"
     };
   });
 
@@ -93,6 +96,8 @@ const ChannelWizardPage = () => {
       case 8:
         return true; // blockedTopics опционально
       case 9:
+        return true; // generationMode всегда выбран
+      case 10:
         return true; // extraNotes опционально
       default:
         return false;
@@ -339,6 +344,58 @@ const ChannelWizardPage = () => {
         );
 
       case 9:
+        return (
+          <div className="space-y-4">
+            <label className="block text-sm font-medium text-slate-200">
+              Режим генерации *
+            </label>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() =>
+                  setFormData({
+                    ...formData,
+                    generationMode: "script"
+                  })
+                }
+                className={`rounded-xl border px-4 py-4 text-left transition ${
+                  (formData.generationMode || "script") === "script"
+                    ? "border-brand bg-brand/10 text-white"
+                    : "border-white/10 bg-slate-950/60 text-slate-300 hover:border-brand/40"
+                }`}
+              >
+                <div className="font-semibold">Сценарий</div>
+                <div className="mt-1 text-xs text-slate-400">
+                  Только подробный сценарий
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setFormData({
+                    ...formData,
+                    generationMode: "prompt"
+                  })
+                }
+                className={`rounded-xl border px-4 py-4 text-left transition ${
+                  formData.generationMode === "prompt"
+                    ? "border-brand bg-brand/10 text-white"
+                    : "border-white/10 bg-slate-950/60 text-slate-300 hover:border-brand/40"
+                }`}
+              >
+                <div className="font-semibold">Сценарий + промпт для видео</div>
+                <div className="mt-1 text-xs text-slate-400">
+                  Сценарий + VIDEO_PROMPT для Sora/Veo
+                </div>
+              </button>
+            </div>
+            <p className="text-sm text-slate-400">
+              Выберите, что будет генерироваться при создании сценариев
+            </p>
+          </div>
+        );
+
+      case 10:
         return (
           <div className="space-y-4">
             <label className="block text-sm font-medium text-slate-200">

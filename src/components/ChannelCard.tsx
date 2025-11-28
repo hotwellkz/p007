@@ -1,4 +1,4 @@
-import { Calendar, Clock, Languages, Users } from "lucide-react";
+import { Calendar, Clock, Languages, Users, Sparkles } from "lucide-react";
 import type { Channel } from "../domain/channel";
 import { timestampToIso } from "../utils/firestore";
 
@@ -7,6 +7,7 @@ interface ChannelCardProps {
   onEdit: () => void;
   onDelete: () => void;
   onGenerate: () => void;
+  onAutoGenerate?: () => void;
 }
 
 const platformLabels: Record<Channel["platform"], string> = {
@@ -26,7 +27,8 @@ const ChannelCard = ({
   channel,
   onEdit,
   onDelete,
-  onGenerate
+  onGenerate,
+  onAutoGenerate
 }: ChannelCardProps) => {
   return (
     <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-6 text-white shadow-lg shadow-brand/5 transition hover:border-brand/30 hover:shadow-brand/20">
@@ -81,6 +83,18 @@ const ChannelCard = ({
         >
           Сгенерировать
         </button>
+        {onAutoGenerate && (
+          <button
+            type="button"
+            onClick={onAutoGenerate}
+            className="flex items-center justify-center gap-2 rounded-xl bg-brand/80 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-dark sm:px-4"
+            title="Автогенерация идеи и сценариев от ИИ"
+          >
+            <Sparkles size={16} />
+            <span className="hidden xs:inline sm:hidden">ИИ</span>
+            <span className="hidden sm:inline">ИИ-идея</span>
+          </button>
+        )}
         <button
           type="button"
           onClick={onEdit}
