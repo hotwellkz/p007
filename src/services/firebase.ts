@@ -85,19 +85,27 @@ if (configErrors.length > 0) {
 }
 
 // Отладочная информация (в dev и production для диагностики)
-if (import.meta.env.DEV || !firebaseConfig.apiKey) {
-  console.log("🔥 Firebase конфигурация:", {
-    projectId: firebaseConfig.projectId,
-    authDomain: firebaseConfig.authDomain,
-    apiKey: firebaseConfig.apiKey
-      ? `${firebaseConfig.apiKey.substring(0, 10)}...`
-      : "❌ НЕ НАЙДЕН",
-    appId: firebaseConfig.appId ? `${firebaseConfig.appId.substring(0, 20)}...` : "❌ НЕ НАЙДЕН",
-    hasAllConfig: !configErrors.length,
-    envVarName: "VITE_FIREBASE_API_KEY",
-    note: "⚠️ Убедитесь, что в Netlify используется правильное имя переменной (не APY_KEY!)"
-  });
-}
+// Всегда показываем в production для диагностики проблем
+console.log("🔥 Firebase конфигурация:", {
+  projectId: firebaseConfig.projectId || "❌ НЕ НАЙДЕН",
+  authDomain: firebaseConfig.authDomain || "❌ НЕ НАЙДЕН",
+  apiKey: firebaseConfig.apiKey
+    ? `${firebaseConfig.apiKey.substring(0, 10)}...${firebaseConfig.apiKey.substring(firebaseConfig.apiKey.length - 4)}`
+    : "❌ НЕ НАЙДЕН",
+  appId: firebaseConfig.appId ? `${firebaseConfig.appId.substring(0, 20)}...` : "❌ НЕ НАЙДЕН",
+  hasAllConfig: !configErrors.length,
+  envVarName: "VITE_FIREBASE_API_KEY",
+  note: "⚠️ Убедитесь, что в Netlify используется правильное имя переменной (не APY_KEY!)",
+  // Диагностика: проверяем, что переменные действительно загружены
+  envCheck: {
+    hasApiKey: !!import.meta.env.VITE_FIREBASE_API_KEY,
+    hasAuthDomain: !!import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+    hasProjectId: !!import.meta.env.VITE_FIREBASE_PROJECT_ID,
+    hasStorageBucket: !!import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+    hasMessagingSenderId: !!import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+    hasAppId: !!import.meta.env.VITE_FIREBASE_APP_ID
+  }
+});
 
 let app;
 let auth: Auth;
@@ -108,9 +116,11 @@ try {
   auth = getAuth(app);
   db = getFirestore(app);
 
-  if (import.meta.env.DEV) {
-    console.log("✅ Firebase успешно инициализирован");
-  }
+  // Всегда показываем успешную инициализацию для диагностики
+  console.log("✅ Firebase успешно инициализирован", {
+    projectId: firebaseConfig.projectId,
+    authDomain: firebaseConfig.authDomain
+  });
 } catch (error) {
   console.error("❌ Ошибка инициализации Firebase:", error);
   if (error instanceof Error) {
