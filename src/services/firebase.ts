@@ -59,8 +59,14 @@ const configErrors: string[] = [];
 if (!firebaseConfig.apiKey || firebaseConfig.apiKey === "your-api-key-here") {
   configErrors.push("VITE_FIREBASE_API_KEY не настроен или имеет значение по умолчанию");
 }
-if (!firebaseConfig.authDomain || !firebaseConfig.authDomain.includes("firebaseapp.com")) {
-  configErrors.push("VITE_FIREBASE_AUTH_DOMAIN должен быть в формате project-id.firebaseapp.com");
+if (
+  !firebaseConfig.authDomain ||
+  (!firebaseConfig.authDomain.includes("firebaseapp.com") &&
+    !firebaseConfig.authDomain.includes("firebaseapp"))
+) {
+  configErrors.push(
+    "VITE_FIREBASE_AUTH_DOMAIN должен быть в формате project-id.firebaseapp.com"
+  );
 }
 if (!firebaseConfig.projectId || firebaseConfig.projectId === "your-project-id") {
   configErrors.push("VITE_FIREBASE_PROJECT_ID не настроен или имеет значение по умолчанию");

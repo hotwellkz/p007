@@ -33,13 +33,15 @@ const firebaseConfig = {
 Скопируйте значения из конфигурации в файл `.env`:
 
 ```env
-VITE_FIREBASE_API_KEY=AIza... (значение из apiKey)
+VITE_FIREBASE_API_KEY=AIzaSyCtAg7fTGY7EsyEQf1WXl0ei7HUO5ls0sQ
 VITE_FIREBASE_AUTH_DOMAIN=prompt-6a4fd.firebaseapp.com
 VITE_FIREBASE_PROJECT_ID=prompt-6a4fd
-VITE_FIREBASE_STORAGE_BUCKET=prompt-6a4fd.appspot.com
-VITE_FIREBASE_MESSAGING_SENDER_ID=123456789 (значение из messagingSenderId)
-VITE_FIREBASE_APP_ID=1:123456789:web:abcdef (значение из appId)
+VITE_FIREBASE_STORAGE_BUCKET=prompt-6a4fd.firebasestorage.app
+VITE_FIREBASE_MESSAGING_SENDER_ID=905027425668
+VITE_FIREBASE_APP_ID=1:905027425668:web:38f58912370df2c2be39d1
 ```
+
+**Примечание:** `storageBucket` может быть в формате `.appspot.com` или `.firebasestorage.app` - оба варианта правильные.
 
 ### 5. Включите Authentication
 

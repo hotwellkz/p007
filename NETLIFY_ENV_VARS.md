@@ -6,13 +6,15 @@
 
 ### Firebase Configuration
 
+**Правильные значения для проекта `prompt-6a4fd`:**
+
 ```
-VITE_FIREBASE_API_KEY=AIzaSy... (ваш API ключ из Firebase Console)
+VITE_FIREBASE_API_KEY=AIzaSyCtAg7fTGY7EsyEQf1WXl0ei7HUO5ls0sQ
 VITE_FIREBASE_AUTH_DOMAIN=prompt-6a4fd.firebaseapp.com
 VITE_FIREBASE_PROJECT_ID=prompt-6a4fd
-VITE_FIREBASE_STORAGE_BUCKET=prompt-6a4fd.appspot.com
-VITE_FIREBASE_MESSAGING_SENDER_ID=123456789012
-VITE_FIREBASE_APP_ID=1:123456789012:web:abcdef123456
+VITE_FIREBASE_STORAGE_BUCKET=prompt-6a4fd.firebasestorage.app
+VITE_FIREBASE_MESSAGING_SENDER_ID=905027425668
+VITE_FIREBASE_APP_ID=1:905027425668:web:38f58912370df2c2be39d1
 ```
 
 ### OpenAI Configuration
@@ -28,24 +30,28 @@ VITE_OPENAI_MODEL=gpt-4o-mini
 SECRETS_SCAN_SMART_DETECTION_ENABLED=false
 ```
 
-## 🔍 Как получить значения Firebase
+## 🔍 Проверка конфигурации
 
-1. Откройте [Firebase Console](https://console.firebase.google.com/)
-2. Выберите проект `prompt-6a4fd`
-3. Перейдите в **Project Settings** (⚙️) → **General**
-4. Найдите раздел **Your apps** → **Web app**
-5. Скопируйте значения из конфигурации:
+Конфигурация Firebase из Firebase Console проверена и соответствует проекту `prompt-6a4fd`:
 
 ```javascript
 const firebaseConfig = {
-  apiKey: "AIza...",           // → VITE_FIREBASE_API_KEY
-  authDomain: "...",            // → VITE_FIREBASE_AUTH_DOMAIN
-  projectId: "...",            // → VITE_FIREBASE_PROJECT_ID
-  storageBucket: "...",         // → VITE_FIREBASE_STORAGE_BUCKET
-  messagingSenderId: "...",     // → VITE_FIREBASE_MESSAGING_SENDER_ID
-  appId: "..."                  // → VITE_FIREBASE_APP_ID
+  apiKey: "AIzaSyCtAg7fTGY7EsyEQf1WXl0ei7HUO5ls0sQ",        // ✓ Правильно
+  authDomain: "prompt-6a4fd.firebaseapp.com",                // ✓ Правильно
+  projectId: "prompt-6a4fd",                                 // ✓ Правильно
+  storageBucket: "prompt-6a4fd.firebasestorage.app",          // ✓ Правильно (новый формат)
+  messagingSenderId: "905027425668",                         // ✓ Правильно
+  appId: "1:905027425668:web:38f58912370df2c2be39d1"        // ✓ Правильно
 };
 ```
+
+**Соответствие переменным окружения:**
+- `apiKey` → `VITE_FIREBASE_API_KEY`
+- `authDomain` → `VITE_FIREBASE_AUTH_DOMAIN`
+- `projectId` → `VITE_FIREBASE_PROJECT_ID`
+- `storageBucket` → `VITE_FIREBASE_STORAGE_BUCKET`
+- `messagingSenderId` → `VITE_FIREBASE_MESSAGING_SENDER_ID`
+- `appId` → `VITE_FIREBASE_APP_ID`
 
 ## ⚠️ Важно
 
