@@ -1,6 +1,7 @@
 [build]
   command = "npm run build"
   publish = "dist"
+  functions = "netlify/functions"
 
 # Настройки для игнорирования Firebase API ключей в собранном коде
 # Firebase API ключи должны быть доступны в клиентском коде, это нормально
@@ -9,4 +10,8 @@
   # Полностью отключаем умное обнаружение секретов
   # Firebase API ключи должны быть в клиентском коде - это нормально для SPA приложений
   SECRETS_SCAN_SMART_DETECTION_ENABLED = "false"
+
+# Настройки для Netlify Functions
+[functions]
+  node_bundler = "esbuild"
 
