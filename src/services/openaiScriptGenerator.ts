@@ -41,6 +41,15 @@ async function callOpenAIProxy(requestBody: Record<string, unknown>): Promise<an
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
+      
+      // Специальная обработка для 504 (Gateway Timeout)
+      if (response.status === 504) {
+        throw new Error(
+          errorData.error?.message ||
+          "Превышено время ожидания ответа от OpenAI API. Попробуйте сократить запрос или использовать более быструю модель (например, gpt-4o-mini)."
+        );
+      }
+      
       throw new Error(
         errorData.error?.message ||
           `OpenAI API ошибка: ${response.status} ${response.statusText}`
@@ -57,7 +66,13 @@ async function callOpenAIProxy(requestBody: Record<string, unknown>): Promise<an
         "или убедитесь, что сайт развернут на Netlify и переменная VITE_NETLIFY_URL установлена."
       );
     }
-    throw error;
+    
+    // Если это уже Error с сообщением, просто пробрасываем его
+    if (error instanceof Error) {
+      throw error;
+    }
+    
+    throw new Error("Неизвестная ошибка при запросе к OpenAI API");
   }
 }
 

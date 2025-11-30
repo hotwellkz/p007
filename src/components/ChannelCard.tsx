@@ -1,6 +1,7 @@
 import { Calendar, Clock, Languages, Users, Sparkles } from "lucide-react";
 import type { Channel } from "../domain/channel";
 import { timestampToIso } from "../utils/firestore";
+import { CollapsibleText } from "./CollapsibleText";
 
 interface ChannelCardProps {
   channel: Channel;
@@ -122,9 +123,14 @@ const ChannelCard = ({
       )}
 
       {channel.extraNotes && (
-        <p className="mt-2 rounded-xl bg-slate-800/40 px-4 py-3 text-sm text-slate-200">
-          Пожелания: {channel.extraNotes}
-        </p>
+        <div className="mt-2 rounded-xl bg-slate-800/40 px-4 py-3 text-sm text-slate-200">
+          <span className="font-medium text-slate-300">Пожелания: </span>
+          <CollapsibleText
+            text={channel.extraNotes}
+            maxHeight={100}
+            className="mt-1"
+          />
+        </div>
       )}
 
       <div className="mt-6 flex flex-wrap gap-3">

@@ -14,6 +14,9 @@
 # Настройки для Netlify Functions
 [functions]
   node_bundler = "esbuild"
+  # Увеличиваем таймаут для функций (максимум 26 секунд для платных планов)
+  # Для бесплатного плана максимум 10 секунд
+  included_files = ["netlify/functions/**"]
 
 # Редирект для SPA (Single Page Application)
 # Все запросы перенаправляются на index.html для работы React Router

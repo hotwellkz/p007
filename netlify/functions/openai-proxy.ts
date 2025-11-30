@@ -58,39 +58,77 @@ const handler: Handler = async (
       };
     }
 
-    // Делаем запрос к OpenAI API
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`
-      },
-      body: JSON.stringify(requestBody)
-    });
+    // Создаем AbortController для таймаута (25 секунд для Netlify Functions)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
 
-    // Получаем ответ от OpenAI
-    const data = await response.json().catch(() => ({
-      error: {
-        message: "Не удалось распарсить ответ от OpenAI API"
+    try {
+      // Делаем запрос к OpenAI API с таймаутом
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`
+        },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      // Получаем ответ от OpenAI
+      const data = await response.json().catch(() => ({
+        error: {
+          message: "Не удалось распарсить ответ от OpenAI API"
+        }
+      }));
+
+      // Возвращаем ответ клиенту
+      return {
+        statusCode: response.status,
+        headers,
+        body: JSON.stringify(data)
+      };
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+      
+      // Обработка таймаута
+      if (fetchError instanceof Error && fetchError.name === "AbortError") {
+        return {
+          statusCode: 504,
+          headers,
+          body: JSON.stringify({
+            error: "Превышено время ожидания ответа от OpenAI API. Попробуйте сократить запрос или использовать более быструю модель."
+          })
+        };
       }
-    }));
-
-    // Возвращаем ответ клиенту
-    return {
-      statusCode: response.status,
-      headers,
-      body: JSON.stringify(data)
-    };
+      
+      throw fetchError;
+    }
   } catch (error) {
     console.error("Ошибка при проксировании запроса к OpenAI:", error);
+    
+    // Определяем тип ошибки для более понятного сообщения
+    let errorMessage = "Неизвестная ошибка при обработке запроса";
+    let statusCode = 500;
+    
+    if (error instanceof Error) {
+      if (error.name === "AbortError" || error.message.includes("timeout")) {
+        errorMessage = "Превышено время ожидания ответа от OpenAI API";
+        statusCode = 504;
+      } else if (error.message.includes("fetch")) {
+        errorMessage = "Не удалось подключиться к OpenAI API. Проверьте интернет-соединение.";
+        statusCode = 503;
+      } else {
+        errorMessage = error.message;
+      }
+    }
+    
     return {
-      statusCode: 500,
+      statusCode,
       headers,
       body: JSON.stringify({
-        error:
-          error instanceof Error
-            ? error.message
-            : "Неизвестная ошибка при обработке запроса"
+        error: errorMessage
       })
     };
   }
