@@ -1,8 +1,24 @@
 import { Link } from "react-router-dom";
+import SEOHead from "../../components/SEOHead";
 
 const PrivacyPolicy = () => {
+  const structuredData = {
+    "@context": "https://schema.org",
+    "@type": "WebPage",
+    name: "Политика конфиденциальности - Shorts AI Studio",
+    description: "Политика конфиденциальности сервиса Shorts AI Studio. Информация о сборе, использовании и защите персональных данных.",
+    url: "https://shortsai.ru/privacy"
+  };
+
   return (
-    <div className="min-h-screen bg-slate-950 px-4 py-12 text-white">
+    <>
+      <SEOHead
+        title="Политика конфиденциальности - Shorts AI Studio"
+        description="Политика конфиденциальности сервиса Shorts AI Studio. Информация о сборе, использовании и защите персональных данных пользователей."
+        keywords="политика конфиденциальности, защита данных, персональные данные, privacy policy"
+        structuredData={structuredData}
+      />
+      <div className="min-h-screen bg-slate-950 px-4 py-12 text-white">
       <div className="mx-auto max-w-3xl space-y-8">
         {/* Header */}
         <div className="space-y-4 border-b border-white/10 pb-8">
@@ -359,6 +375,7 @@ const PrivacyPolicy = () => {
         </div>
       </div>
     </div>
+    </>
   );
 };
 

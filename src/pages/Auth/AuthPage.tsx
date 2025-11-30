@@ -4,6 +4,7 @@ import clsx from "clsx";
 import { useAuthStore } from "../../stores/authStore";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import type { Location } from "react-router-dom";
+import SEOHead from "../../components/SEOHead";
 
 type AuthMode = "login" | "signup";
 
@@ -83,8 +84,35 @@ const AuthPage = () => {
     setPassword("");
   };
 
+  const structuredData = {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    name: "Shorts AI Studio",
+    description: "Генератор сценариев для коротких вертикальных видео с помощью искусственного интеллекта",
+    url: "https://shortsai.ru",
+    applicationCategory: "MultimediaApplication",
+    operatingSystem: "Web",
+    offers: {
+      "@type": "Offer",
+      price: "0",
+      priceCurrency: "RUB"
+    },
+    featureList: [
+      "Генерация сценариев для TikTok, Reels, Shorts",
+      "Настройка каналов с персональными параметрами",
+      "Использование OpenAI для создания контента"
+    ]
+  };
+
   return (
-    <div className="min-h-screen w-full bg-slate-950 px-4 py-12 text-white">
+    <>
+      <SEOHead
+        title="Вход в Shorts AI Studio - Генератор сценариев для TikTok и Reels"
+        description="Войдите в Shorts AI Studio для создания профессиональных сценариев коротких видео. Генерация уникального контента с помощью искусственного интеллекта."
+        keywords="войти, регистрация, генератор сценариев, tiktok, reels, shorts, AI"
+        structuredData={structuredData}
+      />
+      <div className="min-h-screen w-full bg-slate-950 px-4 py-12 text-white">
       <div className="mx-auto grid w-full max-w-5xl gap-12 lg:grid-cols-2">
         <section className="space-y-6">
           <div className="inline-flex items-center gap-2 rounded-full border border-brand/30 bg-brand/10 px-4 py-1 text-sm text-brand-light">
@@ -231,6 +259,7 @@ const AuthPage = () => {
         </Link>
       </footer>
     </div>
+    </>
   );
 };
 

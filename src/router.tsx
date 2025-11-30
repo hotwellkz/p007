@@ -46,10 +46,36 @@ const PrivateRoute = ({ children }: { children: ReactNode }) => {
   return <Navigate to="/auth" replace state={{ from: location }} />;
 };
 
-const AppRouter = () => (
-  <Routes>
-    <Route path="/auth" element={<AuthPage />} />
-    <Route path="/privacy" element={<PrivacyPolicy />} />
+const AppRouter = () => {
+  const location = useLocation();
+
+  // Базовые SEO мета-теги для страниц без собственного SEOHead
+  useEffect(() => {
+    if (location.pathname === "/" || location.pathname.startsWith("/channels")) {
+      const defaultStructuredData = {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        name: "Shorts AI Studio",
+        description: "Генератор сценариев для коротких вертикальных видео с помощью искусственного интеллекта",
+        url: `https://shortsai.ru${location.pathname}`,
+        applicationCategory: "MultimediaApplication"
+      };
+
+      // Обновляем SEO для страниц каналов
+      if (location.pathname.startsWith("/channels")) {
+        document.title = "Мои каналы - Shorts AI Studio";
+        const metaDescription = document.querySelector('meta[name="description"]') as HTMLMetaElement;
+        if (metaDescription) {
+          metaDescription.content = "Управляйте каналами и генерируйте сценарии для TikTok, Reels, Shorts с помощью искусственного интеллекта";
+        }
+      }
+    }
+  }, [location.pathname]);
+
+  return (
+    <Routes>
+      <Route path="/auth" element={<AuthPage />} />
+      <Route path="/privacy" element={<PrivacyPolicy />} />
     <Route
       path="/channels"
       element={
@@ -84,8 +110,9 @@ const AppRouter = () => (
     />
     <Route path="/" element={<Navigate to="/channels" replace />} />
     <Route path="*" element={<Navigate to="/channels" replace />} />
-  </Routes>
-);
+    </Routes>
+  );
+};
 
 export default AppRouter;
 
