@@ -137,3 +137,9 @@ https://your-site.netlify.app/.netlify/functions/openai-proxy
 - [Переменные окружения в Netlify](https://docs.netlify.com/environment-variables/overview/)
 - [Логи функций в Netlify](https://docs.netlify.com/functions/logs/)
 
+
+
+
+
+
+

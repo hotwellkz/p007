@@ -17,6 +17,7 @@ import {
   type GeneratedScript,
   type GenerationResponse
 } from "../../services/openaiScriptGenerator";
+import { sendPromptToSyntx } from "../../api/telegram";
 import type { Channel } from "../../domain/channel";
 
 const ScriptGenerationPage = () => {
@@ -38,6 +39,10 @@ const ScriptGenerationPage = () => {
   const [copied, setCopied] = useState(false);
   const [copiedVideoPrompt, setCopiedVideoPrompt] = useState(false);
   const [copiedFileTitle, setCopiedFileTitle] = useState(false);
+  const [syntxSendStatus, setSyntxSendStatus] = useState<
+    null | "sending" | "sent" | "error"
+  >(null);
+  const [syntxError, setSyntxError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user?.uid || !channelId) {
@@ -87,13 +92,11 @@ const ScriptGenerationPage = () => {
 
     try {
       const mode = channel.generationMode || "script";
-      
+
       if (mode === "prompt" || mode === "video-prompt-only") {
-        // Используем новую функцию для детальных сценариев или только videoPrompt
         const result = await generateDetailedScripts(channel, idea.trim());
         setDetailedResult(result);
       } else {
-        // Старый формат для обратной совместимости
         const result = await generateShortScript(channel, idea.trim());
         setScript(result);
       }
@@ -191,6 +194,35 @@ ${script.sections.sounds || "—"}`;
       setTimeout(() => setCopiedFileTitle(false), 2000);
     } catch (err) {
       setError("Не удалось скопировать название в буфер обмена");
+    }
+  };
+
+  const handleSendToSyntx = async () => {
+    if (!detailedResult?.videoPrompt) return;
+
+    setSyntxSendStatus("sending");
+    setSyntxError(null);
+
+    try {
+      await sendPromptToSyntx(detailedResult.videoPrompt);
+      setSyntxSendStatus("sent");
+    } catch (err: any) {
+      const apiError = err?.response?.data?.error;
+      if (apiError === "TELEGRAM_SESSION_EXPIRED_NEED_RELOGIN") {
+        setSyntxError(
+          "Сессия Telegram истекла. Запустите 'npm run dev:login' в папке backend для повторной авторизации."
+        );
+      } else if (apiError === "TELEGRAM_SESSION_NOT_INITIALIZED") {
+        setSyntxError(
+          "Telegram сессия не инициализирована. Запустите 'npm run dev:login' в папке backend."
+        );
+      } else {
+        setSyntxError(
+          err?.response?.data?.message ||
+            "Ошибка при отправке промпта в SyntX. Попробуйте позже."
+        );
+      }
+      setSyntxSendStatus("error");
     }
   };
 
@@ -326,6 +358,7 @@ ${script.sections.sounds || "—"}`;
                 </button>
               </div>
             </div>
+
 
             {/* Старый формат (для обратной совместимости) */}
             {script && (
@@ -504,14 +537,39 @@ ${script.sections.sounds || "—"}`;
                       <h3 className="text-lg font-semibold text-brand-light">
                         🎬 Промпт для генерации видео
                       </h3>
-                      <button
-                        type="button"
-                        onClick={handleCopyVideoPrompt}
-                        className="flex items-center gap-2 rounded-lg border border-brand/30 bg-brand/10 px-3 py-1.5 text-xs font-medium text-brand-light transition hover:bg-brand/20"
-                      >
-                        <Copy size={14} />
-                        {copiedVideoPrompt ? "Скопировано!" : "Копировать"}
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleCopyVideoPrompt}
+                          className="flex items-center gap-2 rounded-lg border border-brand/30 bg-brand/10 px-3 py-1.5 text-xs font-medium text-brand-light transition hover:bg-brand/20"
+                        >
+                          <Copy size={14} />
+                          {copiedVideoPrompt ? "Скопировано!" : "Копировать"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleSendToSyntx}
+                          disabled={syntxSendStatus === "sending"}
+                          className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-300 transition hover:bg-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {syntxSendStatus === "sending" ? (
+                            <>
+                              <Loader2 size={14} className="animate-spin" />
+                              Отправка...
+                            </>
+                          ) : syntxSendStatus === "sent" ? (
+                            <>
+                              <Check size={14} />
+                              Отправлено
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles size={14} />
+                              Отправить в SyntX
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </div>
                     <textarea
                       readOnly
@@ -519,10 +577,20 @@ ${script.sections.sounds || "—"}`;
                       rows={12}
                       className="w-full rounded-lg border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-slate-200 outline-none"
                     />
-                    <p className="mt-2 text-xs text-slate-400">
-                      Готовый промпт для Sora / Veo 3.1 Fast. Скопируйте и
-                      используйте для генерации видео.
-                    </p>
+                    {syntxSendStatus === "sent" && !syntxError && (
+                      <p className="mt-2 text-xs text-emerald-300">
+                        ✓ Промпт успешно отправлен в SyntX через Telegram
+                      </p>
+                    )}
+                    {syntxSendStatus === "error" && syntxError && (
+                      <p className="mt-2 text-xs text-red-300">{syntxError}</p>
+                    )}
+                    {!syntxSendStatus && (
+                      <p className="mt-2 text-xs text-slate-400">
+                        Готовый промпт для Sora / Veo 3.1 Fast. Скопируйте и
+                        используйте для генерации видео или отправьте в SyntX.
+                      </p>
+                    )}
                   </div>
                 )}
               </div>

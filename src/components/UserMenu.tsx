@@ -65,8 +65,7 @@ const UserMenu = () => {
 
   const handleProfileClick = () => {
     setIsOpen(false);
-    // Пока заглушка
-    alert("Страница профиля в разработке");
+    navigate("/settings");
   };
 
   if (status === "loading") {

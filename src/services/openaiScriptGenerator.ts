@@ -1,79 +1,41 @@
 import type { Channel } from "../domain/channel";
 
-// Вспомогательная функция для выполнения запросов к OpenAI через прокси
-async function callOpenAIProxy(requestBody: Record<string, unknown>): Promise<any> {
-  // Определяем URL прокси:
-  // - В продакшене: относительный путь к Netlify Function
-  // - В разработке: используем продакшен URL, так как локальные функции доступны только с `netlify dev`
-  //   Если нужно тестировать локально, используйте `netlify dev` вместо `npm run dev`
-  const isDevelopment = import.meta.env.DEV;
-  
-  // В режиме разработки пытаемся использовать локальный прокси, если доступен
-  // Иначе используем продакшен URL (если есть)
-  let proxyUrl = "/.netlify/functions/openai-proxy";
-  
-  if (isDevelopment) {
-    // Проверяем, есть ли переменная для локального прокси
-    const localProxyUrl = import.meta.env.VITE_NETLIFY_FUNCTIONS_URL;
-    if (localProxyUrl) {
-      proxyUrl = `${localProxyUrl}/.netlify/functions/openai-proxy`;
-    } else {
-      // В режиме разработки без netlify dev используем продакшен URL
-      // Это работает, если сайт уже развернут на Netlify
-      const netlifyUrl = import.meta.env.VITE_NETLIFY_URL;
-      if (netlifyUrl) {
-        proxyUrl = `${netlifyUrl}/.netlify/functions/openai-proxy`;
-      } else {
-        // Если нет продакшен URL, пробуем локальный (может не работать)
-        proxyUrl = "http://localhost:8888/.netlify/functions/openai-proxy";
-      }
-    }
-  }
+const backendBaseUrl =
+  (import.meta.env.VITE_BACKEND_URL as string | undefined) ||
+  "http://localhost:8080";
 
-  try {
-    const response = await fetch(proxyUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(requestBody)
-    });
+// Вспомогательная функция для выполнения запросов к OpenAI через backend
+async function callOpenAIProxy(
+  requestBody: Record<string, unknown>
+): Promise<any> {
+  const url = `${backendBaseUrl}/api/prompt/openai`;
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      
-      // Специальная обработка для 504 (Gateway Timeout)
-      if (response.status === 504) {
-        throw new Error(
-          errorData.error?.message ||
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(requestBody)
+  });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    // Специальная обработка для 504 (Gateway Timeout)
+    if (response.status === 504) {
+      throw new Error(
+        data.error ||
           "Превышено время ожидания ответа от OpenAI API. Попробуйте сократить запрос или использовать более быструю модель (например, gpt-4o-mini)."
-        );
-      }
-      
-      throw new Error(
-        errorData.error?.message ||
-          `OpenAI API ошибка: ${response.status} ${response.statusText}`
       );
     }
 
-    return await response.json();
-  } catch (error) {
-    // Если ошибка подключения в режиме разработки, даем понятное сообщение
-    if (isDevelopment && error instanceof TypeError && error.message.includes("fetch")) {
-      throw new Error(
-        "Не удалось подключиться к Netlify Function. " +
-        "Для локальной разработки используйте `netlify dev` вместо `npm run dev`, " +
-        "или убедитесь, что сайт развернут на Netlify и переменная VITE_NETLIFY_URL установлена."
-      );
-    }
-    
-    // Если это уже Error с сообщением, просто пробрасываем его
-    if (error instanceof Error) {
-      throw error;
-    }
-    
-    throw new Error("Неизвестная ошибка при запросе к OpenAI API");
+    throw new Error(
+      data.error ||
+        `OpenAI API ошибка: ${response.status} ${response.statusText}`
+    );
   }
+
+  return data;
 }
 
 export interface ScriptSection {

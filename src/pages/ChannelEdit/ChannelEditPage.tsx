@@ -1,13 +1,14 @@
 import { useState, useEffect, FormEvent } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Loader2, Save, X } from "lucide-react";
+import { ArrowLeft, Loader2, Save, X, Plus, Trash2 } from "lucide-react";
 import { useAuthStore } from "../../stores/authStore";
 import { useChannelStore } from "../../stores/channelStore";
 import type {
   Channel,
   SupportedPlatform,
   SupportedLanguage,
-  GenerationMode
+  GenerationMode,
+  ChannelAutoSendSchedule
 } from "../../domain/channel";
 
 const PLATFORMS: { value: SupportedPlatform; label: string }[] = [
@@ -103,13 +104,17 @@ const ChannelEditPage = () => {
     if (channels.length > 0 && channelId) {
       const found = channels.find((c) => c.id === channelId);
       if (found) {
-        // Убеждаемся, что generationMode установлен (для старых каналов)
+        // Убеждаемся, что generationMode и новые поля установлены (для старых каналов)
         setChannel({
           ...found,
           generationMode: found.generationMode || "script",
           youtubeUrl: found.youtubeUrl || null,
           tiktokUrl: found.tiktokUrl || null,
-          instagramUrl: found.instagramUrl || null
+          instagramUrl: found.instagramUrl || null,
+          googleDriveFolderId: found.googleDriveFolderId,
+          autoSendEnabled: found.autoSendEnabled || false,
+          timezone: found.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
+          autoSendSchedules: found.autoSendSchedules || []
         });
         setLoading(false);
       }
@@ -151,6 +156,32 @@ const ChannelEditPage = () => {
     if (!validateUrls()) {
       setError("Проверьте корректность введённых URL");
       return;
+    }
+
+    // Валидация расписания автоотправки
+    if (channel.autoSendEnabled) {
+      if (!channel.timezone || channel.timezone.trim() === "") {
+        setError("Укажите временную зону для автоотправки");
+        return;
+      }
+
+      const schedules = channel.autoSendSchedules || [];
+      for (const schedule of schedules) {
+        if (!schedule.time || !schedule.time.match(/^\d{2}:\d{2}$/)) {
+          setError("Укажите корректное время в формате HH:MM для всех расписаний");
+          return;
+        }
+
+        if (!schedule.daysOfWeek || schedule.daysOfWeek.length === 0) {
+          setError("Выберите хотя бы один день недели для всех расписаний");
+          return;
+        }
+
+        if (schedule.promptsPerRun < 1 || schedule.promptsPerRun > 10) {
+          setError("Количество промптов за запуск должно быть от 1 до 10");
+          return;
+        }
+      }
     }
 
     setSaving(true);
@@ -587,6 +618,278 @@ const ChannelEditPage = () => {
                   )}
                 </div>
               </div>
+
+              {/* Google Drive настройки */}
+              <div className="mt-6 space-y-2">
+                <label className="block text-sm font-medium text-slate-200">
+                  Google Drive Folder ID (опционально)
+                </label>
+                <input
+                  type="text"
+                  value={channel.googleDriveFolderId || ""}
+                  onChange={(e) =>
+                    setChannel({
+                      ...channel,
+                      googleDriveFolderId: e.target.value.trim() || undefined
+                    })
+                  }
+                  placeholder="Например: 1AbCdEfGhIjKlMnOpQrStUvWxYz"
+                  className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none transition placeholder:text-slate-500 focus:border-brand focus:ring-2 focus:ring-brand/40"
+                />
+                <p className="text-xs text-slate-400">
+                  Укажите ID папки на Google Drive, в которую будут сохраняться
+                  видео из SyntX для этого канала.
+                </p>
+              </div>
+            </div>
+
+            {/* Блок автоотправки в Syntx */}
+            <div className="border-t border-white/10 pt-6">
+              <h3 className="mb-4 text-lg font-semibold text-white">
+                Автоотправка в Syntx
+              </h3>
+              <p className="mb-4 text-sm text-slate-400">
+                Настройте автоматическую генерацию и отправку промптов в Syntx-бот по расписанию.
+              </p>
+
+              {/* Переключатель включения автоотправки */}
+              <div className="mb-6 flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  id="autoSendEnabled"
+                  checked={channel.autoSendEnabled || false}
+                  onChange={(e) =>
+                    setChannel({
+                      ...channel,
+                      autoSendEnabled: e.target.checked
+                    })
+                  }
+                  className="h-5 w-5 rounded border-white/20 bg-slate-950/60 text-brand focus:ring-2 focus:ring-brand/40"
+                />
+                <label
+                  htmlFor="autoSendEnabled"
+                  className="text-sm font-medium text-slate-200"
+                >
+                  Включить автоотправку в Syntx
+                </label>
+              </div>
+
+              {channel.autoSendEnabled && (
+                <>
+                  {/* Выбор таймзоны */}
+                  <div className="mb-6 space-y-2">
+                    <label className="block text-sm font-medium text-slate-200">
+                      Временная зона
+                    </label>
+                    <select
+                      value={channel.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone}
+                      onChange={(e) =>
+                        setChannel({
+                          ...channel,
+                          timezone: e.target.value
+                        })
+                      }
+                      className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/40"
+                    >
+                      <option value="Asia/Almaty">Asia/Almaty (Алматы)</option>
+                      <option value="Europe/Moscow">Europe/Moscow (Москва)</option>
+                      <option value="UTC">UTC</option>
+                      <option value="America/New_York">America/New_York (Нью-Йорк)</option>
+                      <option value="Europe/London">Europe/London (Лондон)</option>
+                    </select>
+                    <p className="text-xs text-slate-400">
+                      Выберите временную зону для расписания. По умолчанию используется зона вашего браузера.
+                    </p>
+                  </div>
+
+                  {/* Список расписаний */}
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-sm font-medium text-slate-200">
+                        Расписание отправки
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newSchedule: ChannelAutoSendSchedule = {
+                            id: crypto.randomUUID(),
+                            enabled: true,
+                            daysOfWeek: [1, 2, 3, 4, 5], // Пн-Пт по умолчанию
+                            time: "12:00",
+                            promptsPerRun: 1
+                          };
+                          setChannel({
+                            ...channel,
+                            autoSendSchedules: [
+                              ...(channel.autoSendSchedules || []),
+                              newSchedule
+                            ]
+                          });
+                        }}
+                        className="flex items-center gap-2 rounded-xl border border-brand/40 bg-brand/10 px-3 py-2 text-sm font-medium text-brand transition hover:bg-brand/20"
+                      >
+                        <Plus size={16} />
+                        Добавить расписание
+                      </button>
+                    </div>
+
+                    {(channel.autoSendSchedules || []).length === 0 ? (
+                      <p className="text-sm text-slate-400">
+                        Нет настроенных расписаний. Нажмите "Добавить расписание", чтобы создать новое.
+                      </p>
+                    ) : (
+                      channel.autoSendSchedules?.map((schedule, index) => (
+                        <div
+                          key={schedule.id}
+                          className="rounded-xl border border-white/10 bg-slate-900/40 p-4"
+                        >
+                          <div className="mb-4 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <input
+                                type="checkbox"
+                                checked={schedule.enabled}
+                                onChange={(e) => {
+                                  const updated = [...(channel.autoSendSchedules || [])];
+                                  updated[index] = {
+                                    ...schedule,
+                                    enabled: e.target.checked
+                                  };
+                                  setChannel({
+                                    ...channel,
+                                    autoSendSchedules: updated
+                                  });
+                                }}
+                                className="h-4 w-4 rounded border-white/20 bg-slate-950/60 text-brand focus:ring-2 focus:ring-brand/40"
+                              />
+                              <span className="text-sm font-medium text-slate-200">
+                                Расписание {index + 1}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = channel.autoSendSchedules?.filter(
+                                  (s) => s.id !== schedule.id
+                                ) || [];
+                                setChannel({
+                                  ...channel,
+                                  autoSendSchedules: updated
+                                });
+                              }}
+                              className="rounded-lg p-1 text-red-400 transition hover:bg-red-500/20"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+
+                          {/* Дни недели */}
+                          <div className="mb-4">
+                            <label className="mb-2 block text-xs font-medium text-slate-300">
+                              Дни недели
+                            </label>
+                            <div className="flex flex-wrap gap-2">
+                              {[
+                                { value: 0, label: "Вс" },
+                                { value: 1, label: "Пн" },
+                                { value: 2, label: "Вт" },
+                                { value: 3, label: "Ср" },
+                                { value: 4, label: "Чт" },
+                                { value: 5, label: "Пт" },
+                                { value: 6, label: "Сб" }
+                              ].map((day) => (
+                                <button
+                                  key={day.value}
+                                  type="button"
+                                  onClick={() => {
+                                    const updated = [...(channel.autoSendSchedules || [])];
+                                    const currentDays = updated[index].daysOfWeek || [];
+                                    if (currentDays.includes(day.value)) {
+                                      updated[index] = {
+                                        ...schedule,
+                                        daysOfWeek: currentDays.filter(
+                                          (d) => d !== day.value
+                                        )
+                                      };
+                                    } else {
+                                      updated[index] = {
+                                        ...schedule,
+                                        daysOfWeek: [...currentDays, day.value]
+                                      };
+                                    }
+                                    setChannel({
+                                      ...channel,
+                                      autoSendSchedules: updated
+                                    });
+                                  }}
+                                  className={`rounded-lg px-3 py-1 text-xs font-medium transition ${
+                                    schedule.daysOfWeek?.includes(day.value)
+                                      ? "bg-brand text-white"
+                                      : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                                  }`}
+                                >
+                                  {day.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Время и количество промптов */}
+                          <div className="grid gap-4 sm:grid-cols-2">
+                            <div>
+                              <label className="mb-2 block text-xs font-medium text-slate-300">
+                                Время (HH:MM)
+                              </label>
+                              <input
+                                type="time"
+                                value={schedule.time}
+                                onChange={(e) => {
+                                  const updated = [...(channel.autoSendSchedules || [])];
+                                  updated[index] = {
+                                    ...schedule,
+                                    time: e.target.value
+                                  };
+                                  setChannel({
+                                    ...channel,
+                                    autoSendSchedules: updated
+                                  });
+                                }}
+                                className="w-full rounded-lg border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-white outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/40"
+                              />
+                            </div>
+                            <div>
+                              <label className="mb-2 block text-xs font-medium text-slate-300">
+                                Количество промптов за запуск
+                              </label>
+                              <input
+                                type="number"
+                                min="1"
+                                max="10"
+                                value={schedule.promptsPerRun}
+                                onChange={(e) => {
+                                  const value = Math.max(
+                                    1,
+                                    Math.min(10, parseInt(e.target.value) || 1)
+                                  );
+                                  const updated = [...(channel.autoSendSchedules || [])];
+                                  updated[index] = {
+                                    ...schedule,
+                                    promptsPerRun: value
+                                  };
+                                  setChannel({
+                                    ...channel,
+                                    autoSendSchedules: updated
+                                  });
+                                }}
+                                className="w-full rounded-lg border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-white outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/40"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="flex items-center justify-end gap-4 pt-4">
