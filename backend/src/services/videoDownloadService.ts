@@ -7,7 +7,7 @@ import { getUserOAuthTokens, updateUserAccessToken } from "../repositories/userO
 import { db, isFirestoreAvailable } from "./firebaseAdmin";
 import { Logger } from "../utils/logger";
 import { google } from "googleapis";
-import { formatFileName } from "../utils/fileUtils";
+import { generateVideoFileName } from "../utils/fileUtils";
 
 const SYNX_CHAT_ID = process.env.SYNX_CHAT_ID;
 
@@ -15,7 +15,8 @@ export interface DownloadAndUploadOptions {
   channelId: string;
   userId: string;
   telegramMessageId?: number;
-  videoTitle?: string;
+  videoTitle?: string; // сгенерированное название ролика
+  prompt?: string; // текст промпта для fallback
   scheduleId?: string; // Для отслеживания автоматических загрузок
 }
 
@@ -35,7 +36,7 @@ export interface DownloadAndUploadResult {
 export async function downloadAndUploadVideoToDrive(
   options: DownloadAndUploadOptions
 ): Promise<DownloadAndUploadResult> {
-  const { channelId, userId, telegramMessageId, videoTitle, scheduleId } = options;
+  const { channelId, userId, telegramMessageId, videoTitle, prompt, scheduleId } = options;
 
   Logger.info("downloadAndUploadVideoToDrive: start", {
     channelId,
@@ -151,28 +152,21 @@ export async function downloadAndUploadVideoToDrive(
         folderId: finalFolderId
       });
 
-      // Формируем имя файла для Google Drive из videoTitle или названия канала
-      let driveFileName: string;
+      // Формируем имя файла для Google Drive используя общую функцию
+      const driveFileName = generateVideoFileName({
+        title: videoTitle,
+        prompt: prompt,
+        channelName: channelData.name,
+        createdAt: new Date()
+      });
       
-      if (videoTitle) {
-        // Используем название ролика из запроса
-        driveFileName = formatFileName(videoTitle);
-        Logger.info("Using video title for file name", {
-          originalTitle: videoTitle,
-          sanitizedFileName: driveFileName
-        });
-      } else {
-        // Fallback: используем название канала с timestamp
-        const safeName =
-          channelData.name?.replace(/[^\w\d\-]+/g, "_").slice(0, 50) ||
-          `channel_${channelId}`;
-        const timestamp = Date.now();
-        driveFileName = `${safeName}_${timestamp}.mp4`;
-        Logger.info("Using channel name for file name (videoTitle not provided)", {
-          channelName: channelData.name,
-          fileName: driveFileName
-        });
-      }
+      Logger.info("Generated video file name for Google Drive", {
+        channelId,
+        originalTitle: videoTitle || "not provided",
+        promptLength: prompt?.length || 0,
+        channelName: channelData.name || "not provided",
+        fileName: driveFileName
+      });
 
       // Пробуем использовать OAuth токен пользователя, если доступен
       let driveResult;
@@ -256,8 +250,12 @@ export async function downloadAndUploadVideoToDrive(
       }
 
       Logger.info("File uploaded to Google Drive", {
+        channelId,
         fileId: driveResult.fileId,
-        webViewLink: driveResult.webViewLink
+        fileName: driveFileName,
+        webViewLink: driveResult.webViewLink,
+        folderId: finalFolderId,
+        scheduleId: scheduleId || "manual"
       });
 
       // Шаг 3: Удаляем временный файл

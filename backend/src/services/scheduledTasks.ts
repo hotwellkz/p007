@@ -8,6 +8,8 @@ interface ScheduledTask {
   userId: string;
   runAt: number; // timestamp в миллисекундах
   telegramMessageId?: number;
+  videoTitle?: string; // сгенерированное название ролика
+  prompt?: string; // текст промпта для fallback
   timeoutId?: NodeJS.Timeout;
 }
 
@@ -25,8 +27,10 @@ export function scheduleAutoDownload(options: {
   userId: string;
   telegramMessageInfo: { messageId: number; chatId: string };
   delayMinutes: number;
+  videoTitle?: string; // сгенерированное название ролика
+  prompt?: string; // текст промпта для fallback
 }): string {
-  const { channelId, scheduleId, userId, telegramMessageInfo, delayMinutes } = options;
+  const { channelId, scheduleId, userId, telegramMessageInfo, delayMinutes, videoTitle, prompt } = options;
   
   const taskId = `${channelId}_${scheduleId}_${Date.now()}`;
   const delayMs = delayMinutes * 60 * 1000;
@@ -39,7 +43,9 @@ export function scheduleAutoDownload(options: {
     userId,
     messageId: telegramMessageInfo.messageId,
     delayMinutes,
-    runAt: new Date(runAt).toISOString()
+    runAt: new Date(runAt).toISOString(),
+    hasVideoTitle: !!videoTitle,
+    hasPrompt: !!prompt
   });
 
   // Отменяем предыдущую задачу для этого scheduleId, если она существует
@@ -69,12 +75,17 @@ export function scheduleAutoDownload(options: {
     });
 
     try {
+      // Получаем сохранённые данные задачи
+      const savedTask = activeTasks.get(taskId);
+      
       // Вызываем функцию скачивания и загрузки
       const result = await downloadAndUploadVideoToDrive({
         channelId,
         userId,
         telegramMessageId: telegramMessageInfo.messageId,
-        scheduleId
+        scheduleId,
+        videoTitle: savedTask?.videoTitle,
+        prompt: savedTask?.prompt
       });
 
       if (result.success) {
@@ -115,6 +126,8 @@ export function scheduleAutoDownload(options: {
     userId,
     runAt,
     telegramMessageId: telegramMessageInfo.messageId,
+    videoTitle,
+    prompt,
     timeoutId
   };
 

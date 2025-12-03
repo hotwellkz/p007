@@ -23,7 +23,7 @@ import {
   downloadTelegramVideoToTemp,
   cleanupTempFile
 } from "../utils/telegramDownload";
-import { formatFileName } from "../utils/fileUtils";
+import { generateVideoFileName } from "../utils/fileUtils";
 import { Logger } from "../utils/logger";
 import { db, isFirestoreAvailable, getFirebaseError } from "../services/firebaseAdmin";
 import { downloadAndUploadVideoToDrive } from "../services/videoDownloadService";
@@ -682,7 +682,9 @@ router.post("/fetchVideoAndUploadToDrive", authRequired, async (req, res) => {
       channelId,
       userId,
       telegramMessageId,
-      videoTitle
+      videoTitle,
+      // При ручной загрузке prompt обычно не доступен, но можно передать если есть
+      prompt: undefined
     });
 
     if (result.success) {

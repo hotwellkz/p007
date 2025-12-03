@@ -25,6 +25,17 @@ interface ChannelWithSchedule {
 }
 
 /**
+ * Внутрипроцессный кэш недавних запусков расписаний.
+ * Нужен как дополнительная защита от повторных срабатываний
+ * (даже если lastRunAt ещё не успел сохраниться в Firestore
+ * или планировщик вызывается несколько раз подряд).
+ *
+ * Ключ: `${channelId}:${scheduleId}`
+ * Значение: timestamp последнего запуска (ms)
+ */
+const recentScheduleRuns = new Map<string, number>();
+
+/**
  * Получает все каналы с включённой автоотправкой
  */
 async function getChannelsWithAutoSendEnabled(): Promise<ChannelWithSchedule[]> {
@@ -380,23 +391,27 @@ function shouldRunScheduleNow(
     return false;
   }
 
-  // Проверка 5: не был ли уже запуск сегодня в это время
+  // Проверка 5: не был ли уже запуск сегодня в это время (с учётом "окна" ±1 минута)
   if (schedule.lastRunAt) {
     const lastRun = new Date(schedule.lastRunAt);
     const lastRunLocal = getLocalTimeInTimezone(lastRun, timezone);
 
-    // Проверяем, был ли запуск сегодня в то же время (с точностью до минуты)
+    // Проверяем, был ли запуск сегодня рядом с запланированным временем
     const sameDay =
       lastRunLocal.year === localTime.year &&
       lastRunLocal.month === localTime.month &&
       lastRunLocal.date === localTime.date;
 
-    const sameTime =
-      lastRunLocal.hour === scheduleTime.hour &&
-      lastRunLocal.minute === scheduleTime.minute;
+    // Считаем запуск уже выполненным, если lastRunLocal находится в том же "окне" ±1 минута
+    // вокруг запланированного времени, что и текущий nowUtc.
+    const lastRunMinutes = lastRunLocal.hour * 60 + lastRunLocal.minute;
+    const targetMinutes = scheduleTime.hour * 60 + scheduleTime.minute;
+    const lastRunDiff = Math.abs(lastRunMinutes - targetMinutes);
 
-    if (sameDay && sameTime) {
-      Logger.info("shouldRunScheduleNow: SKIPPED (already run today at this time)", {
+    const alreadyRanInWindow = sameDay && lastRunDiff <= 1;
+
+    if (alreadyRanInWindow) {
+      Logger.info("shouldRunScheduleNow: SKIPPED (already run today in this time window)", {
         channelId: channel.id,
         scheduleId: schedule.id,
         lastRunAt: schedule.lastRunAt,
@@ -407,7 +422,9 @@ function shouldRunScheduleNow(
         currentLocal: {
           date: `${localTime.year}-${String(localTime.month).padStart(2, "0")}-${String(localTime.date).padStart(2, "0")}`,
           time: localTime.timeString
-        }
+        },
+        targetTime: schedule.time,
+        lastRunDiffMinutes: lastRunDiff
       });
       return false;
     }
@@ -550,6 +567,29 @@ export async function processAutoSendTick(): Promise<void> {
         });
 
         if (shouldRunScheduleNow(channel, schedule, nowUtc)) {
+          const runKey = `${channel.id}:${schedule.id}`;
+          const lastRunTs = recentScheduleRuns.get(runKey);
+          const nowTs = nowUtc.getTime();
+
+          // Дополнительная защита: не даём одному и тому же расписанию
+          // сработать чаще, чем раз в 90 секунд на этом процессе,
+          // даже если что-то не так с сохранением lastRunAt.
+          if (lastRunTs && nowTs - lastRunTs < 90_000) {
+            Logger.warn("processAutoSendTick: SKIPPED (recent run in memory cache)", {
+              channelId: channel.id,
+              scheduleId: schedule.id,
+              nowUtc: nowUtc.toISOString(),
+              lastRunTs: new Date(lastRunTs).toISOString(),
+              diffMs: nowTs - lastRunTs
+            });
+            skippedCount++;
+            continue;
+          }
+
+          // Фиксируем запуск в кэше до фактической отправки,
+          // чтобы даже при ошибке сохранения в Firestore не было дублей.
+          recentScheduleRuns.set(runKey, nowTs);
+
           triggeredCount++;
           Logger.info("processAutoSendTick: TRIGGERED auto-send", {
             channelId: channel.id,
@@ -574,14 +614,15 @@ export async function processAutoSendTick(): Promise<void> {
                 totalPrompts: schedule.promptsPerRun
               });
 
-              const messageInfo = await generateAndSendPromptForChannel(channel.id, channel.ownerId);
+              const promptResult = await generateAndSendPromptForChannel(channel.id, channel.ownerId);
               
               Logger.info("processAutoSendTick: prompt sent successfully", {
                 channelId: channel.id,
                 scheduleId: schedule.id,
                 promptNumber: i + 1,
-                messageId: messageInfo.messageId,
-                chatId: messageInfo.chatId
+                messageId: promptResult.messageId,
+                chatId: promptResult.chatId,
+                hasTitle: !!promptResult.title
               });
 
               // Если включено автоматическое скачивание, планируем задачу
@@ -597,7 +638,7 @@ export async function processAutoSendTick(): Promise<void> {
                 Logger.info("processAutoSendTick: scheduling auto-download", {
                   channelId: channel.id,
                   scheduleId: schedule.id,
-                  messageId: messageInfo.messageId,
+                  messageId: promptResult.messageId,
                   delayMinutes: validDelay,
                   hasGoogleDriveFolder: !!channel.googleDriveFolderId
                 });
@@ -607,8 +648,13 @@ export async function processAutoSendTick(): Promise<void> {
                     channelId: channel.id,
                     scheduleId: schedule.id,
                     userId: channel.ownerId,
-                    telegramMessageInfo: messageInfo,
-                    delayMinutes: validDelay
+                    telegramMessageInfo: {
+                      messageId: promptResult.messageId,
+                      chatId: promptResult.chatId
+                    },
+                    delayMinutes: validDelay,
+                    videoTitle: promptResult.title,
+                    prompt: promptResult.prompt
                   });
 
                   Logger.info("processAutoSendTick: auto-download scheduled", {
