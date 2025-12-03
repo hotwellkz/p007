@@ -40,52 +40,30 @@ export async function downloadTelegramVideoToTemp(
   let videoMessage: Api.Message;
 
   try {
-    // Если указан messageId, получаем конкретное сообщение
-    if (messageId) {
-      Logger.info("Fetching specific message from Telegram", {
-        chatId,
-        messageId
-      });
-
-      try {
-        const messages = await Promise.race([
-          client.getMessages(chatId, {
-            ids: [messageId]
-          }) as Promise<Api.Message[]>,
-          new Promise<Api.Message[]>((_, reject) => 
-            setTimeout(() => reject(new Error("Get messages timeout after 30 seconds")), 30000)
-          )
-        ]);
-
-        if (messages.length === 0) {
-          throw new Error(
-            `Message with ID ${messageId} not found in chat ${chatId}`
-          );
-        }
-
-        videoMessage = messages[0];
-      } catch (getMsgError: any) {
-        const errorMsg = String(getMsgError?.message ?? getMsgError);
-        if (errorMsg.includes("timeout") || errorMsg.includes("TIMEOUT")) {
-          throw new Error(
-            "TELEGRAM_TIMEOUT: Превышено время ожидания получения сообщения. " +
-            "Проверьте подключение к интернету и попробуйте ещё раз."
-          );
-        }
-        throw getMsgError;
-      }
-    } else {
-      // Ищем последнее видео в чате
-      Logger.info("Searching for latest video in Telegram chat", {
-        chatId,
-        limit: 50
-      });
+    // ИСПРАВЛЕНИЕ: Если указан messageId, это обычно ID промпта (текстового сообщения),
+    // а не видео. Видео приходит позже. Поэтому мы НЕ пытаемся получить сообщение с этим ID,
+    // а ищем последнее видео ПОСЛЕ этого messageId.
+    // Всегда ищем последнее видео в чате, но если messageId указан, фильтруем только видео после него
+    
+    // Ищем последнее видео в чате
+    // Если messageId передан, ищем видео ПОСЛЕ этого сообщения (для автоматического скачивания)
+    Logger.info("Searching for latest video in Telegram chat", {
+      chatId,
+      limit: messageId ? 100 : 50,
+      afterMessageId: messageId || "not specified",
+      note: messageId 
+        ? "Will search for video after this prompt message ID" 
+        : "Will search for latest video in chat"
+    });
 
       let messages: Api.Message[];
       try {
+        // Получаем больше сообщений, если нужно искать после конкретного messageId
+        const limit = messageId ? 100 : 50;
+        
         messages = await Promise.race([
           client.getMessages(chatId, {
-            limit: 50
+            limit
           }) as Promise<Api.Message[]>,
           new Promise<Api.Message[]>((_, reject) => 
             setTimeout(() => reject(new Error("Get messages timeout after 30 seconds")), 30000)
@@ -105,8 +83,17 @@ export async function downloadTelegramVideoToTemp(
       Logger.info(`Received ${messages.length} messages from Telegram chat`);
 
       // Фильтруем сообщения с видео
+      // Если messageId указан, фильтруем только сообщения ПОСЛЕ него (с большим ID)
       const videoMessages = messages
         .filter((msg) => {
+          // Если указан messageId, берём только сообщения после него
+          if (messageId) {
+            const msgId = (msg as any).id;
+            if (typeof msgId === "number" && msgId <= messageId) {
+              return false; // Пропускаем сообщения до или равные messageId промпта
+            }
+          }
+          
           try {
             // Проверяем наличие video attachment
             const hasVideo =
@@ -178,13 +165,25 @@ export async function downloadTelegramVideoToTemp(
         });
 
       if (videoMessages.length === 0) {
-        throw new Error(
-          "NO_VIDEO_FOUND: Видео ещё не готово в чате. Подождите окончания генерации и попробуйте ещё раз."
-        );
+        if (messageId) {
+          throw new Error(
+            `NO_VIDEO_FOUND: Видео ещё не готово в чате после сообщения ${messageId}. ` +
+            `Подождите окончания генерации и попробуйте ещё раз.`
+          );
+        } else {
+          throw new Error(
+            "NO_VIDEO_FOUND: Видео ещё не готово в чате. Подождите окончания генерации и попробуйте ещё раз."
+          );
+        }
       }
 
       videoMessage = videoMessages[0];
-    }
+      
+      Logger.info("Found video message after filtering", {
+        videoMessageId: (videoMessage as any).id,
+        promptMessageId: messageId || "not specified",
+        totalVideoMessages: videoMessages.length
+      });
 
     Logger.info("Video message found, preparing to download", {
       messageId: videoMessage.id,
@@ -264,8 +263,25 @@ export async function downloadTelegramVideoToTemp(
     }
 
     if (!fileBuffer || fileBuffer.length === 0) {
+      Logger.error("Downloaded file buffer is empty", {
+        messageId: videoMessage.id,
+        hasVideo: "video" in videoMessage,
+        hasDocument: "document" in videoMessage
+      });
       throw new Error(
-        "TELEGRAM_DOWNLOAD_FAILED: Скачанный файл пуст или повреждён."
+        "TELEGRAM_DOWNLOAD_FAILED: Скачанный файл пуст или повреждён. Возможно, видео ещё не готово."
+      );
+    }
+    
+    // Дополнительная проверка: файл должен быть больше 1KB (минимальный размер для видео)
+    if (fileBuffer.length < 1024) {
+      Logger.error("Downloaded file is too small (likely incomplete)", {
+        messageId: videoMessage.id,
+        fileSize: fileBuffer.length,
+        expectedMinSize: 1024
+      });
+      throw new Error(
+        "TELEGRAM_DOWNLOAD_FAILED: Скачанный файл слишком мал (возможно, видео ещё не готово или повреждено)."
       );
     }
 
@@ -281,8 +297,27 @@ export async function downloadTelegramVideoToTemp(
     const stats = await fs.stat(tempPath);
     if (stats.size === 0) {
       await fs.unlink(tempPath).catch(() => {});
+      Logger.error("File written to disk is empty", {
+        messageId: videoMessage.id,
+        tempPath,
+        bufferSize: fileBuffer.length
+      });
       throw new Error(
-        "TELEGRAM_DOWNLOAD_FAILED: Скачанный файл пуст или повреждён."
+        "TELEGRAM_DOWNLOAD_FAILED: Скачанный файл пуст или повреждён. Возможно, видео ещё не готово."
+      );
+    }
+    
+    // Проверяем, что размер файла на диске совпадает с размером буфера
+    if (stats.size !== fileBuffer.length) {
+      Logger.error("File size mismatch", {
+        messageId: videoMessage.id,
+        tempPath,
+        bufferSize: fileBuffer.length,
+        fileSize: stats.size
+      });
+      await fs.unlink(tempPath).catch(() => {});
+      throw new Error(
+        "TELEGRAM_DOWNLOAD_FAILED: Размер файла на диске не совпадает с размером буфера. Файл может быть повреждён."
       );
     }
 

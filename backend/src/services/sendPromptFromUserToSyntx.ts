@@ -5,11 +5,16 @@ const SYNX_CHAT_ID = process.env.SYNX_CHAT_ID;
 
 export class TelegramSessionExpiredError extends Error {}
 
+export interface TelegramMessageInfo {
+  messageId: number;
+  chatId: string;
+}
+
 export async function sendPromptFromUserToSyntx(
   // userId сохранён для совместимости сигнатуры, сейчас не используется
   _userId: string,
   prompt: string
-): Promise<void> {
+): Promise<TelegramMessageInfo> {
   if (!SYNX_CHAT_ID) {
     throw new Error("SYNX_CHAT_ID is not configured");
   }
@@ -22,7 +27,19 @@ export async function sendPromptFromUserToSyntx(
   let client;
   try {
     client = await createTelegramClientFromStringSession(stringSession);
-    await client.sendMessage(SYNX_CHAT_ID, { message: prompt });
+    const sentMessage = await client.sendMessage(SYNX_CHAT_ID, { message: prompt });
+    
+    // Извлекаем messageId из отправленного сообщения
+    const messageId = (sentMessage as any).id;
+    
+    if (!messageId || typeof messageId !== "number") {
+      throw new Error("Failed to get messageId from sent message");
+    }
+    
+    return {
+      messageId,
+      chatId: SYNX_CHAT_ID
+    };
   } catch (err: any) {
     const message = String(err?.message ?? err);
     if (

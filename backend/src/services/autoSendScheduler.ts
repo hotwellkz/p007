@@ -1,6 +1,7 @@
 import { db, isFirestoreAvailable, getFirestoreInfo } from "./firebaseAdmin";
 import { Logger } from "../utils/logger";
 import { generateAndSendPromptForChannel } from "./autoSendService";
+import { scheduleAutoDownload } from "./scheduledTasks";
 
 // Типы для канала с расписанием
 interface ChannelAutoSendSchedule {
@@ -18,6 +19,9 @@ interface ChannelWithSchedule {
   autoSendEnabled?: boolean;
   timezone?: string;
   autoSendSchedules?: ChannelAutoSendSchedule[];
+  autoDownloadToDriveEnabled?: boolean;
+  autoDownloadDelayMinutes?: number;
+  googleDriveFolderId?: string;
 }
 
 /**
@@ -158,7 +162,10 @@ async function getChannelsWithAutoSendEnabled(): Promise<ChannelWithSchedule[]> 
           ownerId: userId,
           autoSendEnabled: true,
           timezone: channelData.timezone || "UTC",
-          autoSendSchedules: autoSendSchedules
+          autoSendSchedules: autoSendSchedules,
+          autoDownloadToDriveEnabled: channelData.autoDownloadToDriveEnabled === true,
+          autoDownloadDelayMinutes: channelData.autoDownloadDelayMinutes ?? 10,
+          googleDriveFolderId: channelData.googleDriveFolderId
         });
       }
     }
@@ -567,13 +574,65 @@ export async function processAutoSendTick(): Promise<void> {
                 totalPrompts: schedule.promptsPerRun
               });
 
-              await generateAndSendPromptForChannel(channel.id, channel.ownerId);
+              const messageInfo = await generateAndSendPromptForChannel(channel.id, channel.ownerId);
               
               Logger.info("processAutoSendTick: prompt sent successfully", {
                 channelId: channel.id,
                 scheduleId: schedule.id,
-                promptNumber: i + 1
+                promptNumber: i + 1,
+                messageId: messageInfo.messageId,
+                chatId: messageInfo.chatId
               });
+
+              // Если включено автоматическое скачивание, планируем задачу
+              if (
+                channel.autoDownloadToDriveEnabled === true &&
+                channel.googleDriveFolderId
+              ) {
+                const delayMinutes = channel.autoDownloadDelayMinutes ?? 10;
+                
+                // Валидация задержки
+                const validDelay = Math.max(1, Math.min(60, delayMinutes));
+                
+                Logger.info("processAutoSendTick: scheduling auto-download", {
+                  channelId: channel.id,
+                  scheduleId: schedule.id,
+                  messageId: messageInfo.messageId,
+                  delayMinutes: validDelay,
+                  hasGoogleDriveFolder: !!channel.googleDriveFolderId
+                });
+
+                try {
+                  const taskId = scheduleAutoDownload({
+                    channelId: channel.id,
+                    scheduleId: schedule.id,
+                    userId: channel.ownerId,
+                    telegramMessageInfo: messageInfo,
+                    delayMinutes: validDelay
+                  });
+
+                  Logger.info("processAutoSendTick: auto-download scheduled", {
+                    channelId: channel.id,
+                    scheduleId: schedule.id,
+                    taskId,
+                    willRunInMinutes: validDelay
+                  });
+                } catch (scheduleError) {
+                  // Логируем ошибку планирования, но не прерываем основной процесс
+                  Logger.error("processAutoSendTick: failed to schedule auto-download", {
+                    channelId: channel.id,
+                    scheduleId: schedule.id,
+                    error: scheduleError instanceof Error ? scheduleError.message : String(scheduleError)
+                  });
+                }
+              } else {
+                Logger.info("processAutoSendTick: auto-download not enabled or folder not configured", {
+                  channelId: channel.id,
+                  scheduleId: schedule.id,
+                  autoDownloadToDriveEnabled: channel.autoDownloadToDriveEnabled,
+                  hasGoogleDriveFolder: !!channel.googleDriveFolderId
+                });
+              }
               
               // Небольшая задержка между промптами, чтобы не перегружать API
               if (i < schedule.promptsPerRun - 1) {

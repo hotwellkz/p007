@@ -114,7 +114,9 @@ const ChannelEditPage = () => {
           googleDriveFolderId: found.googleDriveFolderId,
           autoSendEnabled: found.autoSendEnabled || false,
           timezone: found.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
-          autoSendSchedules: found.autoSendSchedules || []
+          autoSendSchedules: found.autoSendSchedules || [],
+          autoDownloadToDriveEnabled: found.autoDownloadToDriveEnabled || false,
+          autoDownloadDelayMinutes: found.autoDownloadDelayMinutes ?? 10
         });
         setLoading(false);
       }
@@ -889,6 +891,79 @@ const ChannelEditPage = () => {
                     )}
                   </div>
                 </>
+              )}
+            </div>
+
+            {/* Блок автоматического скачивания в Google Drive */}
+            <div className="border-t border-white/10 pt-6">
+              <h3 className="mb-4 text-lg font-semibold text-white">
+                Автоматическое скачивание в Google Drive
+              </h3>
+              <p className="mb-4 text-sm text-slate-400">
+                Настройте автоматическое скачивание видео из Telegram и загрузку в Google Drive после автогенерации промпта.
+              </p>
+
+              {/* Переключатель включения автоскачивания */}
+              <div className="mb-6 flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  id="autoDownloadToDriveEnabled"
+                  checked={channel.autoDownloadToDriveEnabled || false}
+                  onChange={(e) =>
+                    setChannel({
+                      ...channel,
+                      autoDownloadToDriveEnabled: e.target.checked
+                    })
+                  }
+                  className="h-5 w-5 rounded border-white/20 bg-slate-950/60 text-brand focus:ring-2 focus:ring-brand/40"
+                />
+                <label
+                  htmlFor="autoDownloadToDriveEnabled"
+                  className="text-sm font-medium text-slate-200"
+                >
+                  Автоматически скачивать видео из Telegram и загружать в Google Drive после автогенерации
+                </label>
+              </div>
+
+              {channel.autoDownloadToDriveEnabled && (
+                <div className="space-y-4">
+                  {/* Поле задержки */}
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-200">
+                      Задержка перед скачиванием (минуты)
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="60"
+                      value={channel.autoDownloadDelayMinutes ?? 10}
+                      onChange={(e) => {
+                        const value = Math.max(
+                          1,
+                          Math.min(60, parseInt(e.target.value) || 10)
+                        );
+                        setChannel({
+                          ...channel,
+                          autoDownloadDelayMinutes: value
+                        });
+                      }}
+                      className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/40"
+                    />
+                    <p className="mt-2 text-xs text-slate-400">
+                      Время ожидания перед автоматическим скачиванием видео из Telegram. 
+                      По умолчанию: 10 минут. Минимум: 1 минута, максимум: 60 минут.
+                    </p>
+                  </div>
+
+                  {/* Предупреждение о необходимости настройки Google Drive папки */}
+                  {!channel.googleDriveFolderId && (
+                    <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-4">
+                      <p className="text-sm text-yellow-200">
+                        ⚠️ Для работы автоматического скачивания необходимо указать ID папки Google Drive выше.
+                      </p>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
 

@@ -26,6 +26,7 @@ import {
 import { formatFileName } from "../utils/fileUtils";
 import { Logger } from "../utils/logger";
 import { db, isFirestoreAvailable, getFirebaseError } from "../services/firebaseAdmin";
+import { downloadAndUploadVideoToDrive } from "../services/videoDownloadService";
 
 const router = Router();
 
@@ -645,6 +646,7 @@ router.post("/fetchLatestVideoToDrive", authRequired, async (req, res) => {
 });
 
 // Новый эндпоинт: скачать видео из Telegram во временную папку и загрузить в Google Drive
+// Теперь использует общий сервис downloadAndUploadVideoToDrive
 router.post("/fetchVideoAndUploadToDrive", authRequired, async (req, res) => {
   const {
     channelId,
@@ -666,314 +668,39 @@ router.post("/fetchVideoAndUploadToDrive", authRequired, async (req, res) => {
   }
 
   const userId = req.user!.uid;
-      Logger.info("fetchVideoAndUploadToDrive: start", {
-        userId,
-        channelId,
-        googleDriveFolderId,
-        telegramMessageId,
-        videoTitle: videoTitle || "not provided"
-      });
+  Logger.info("fetchVideoAndUploadToDrive: start", {
+    userId,
+    channelId,
+    googleDriveFolderId,
+    telegramMessageId,
+    videoTitle: videoTitle || "not provided"
+  });
 
-  // Проверяем Telegram-сессию
-  const stringSession = loadSessionString();
-  if (!stringSession) {
-    return res.status(503).json({
-      status: "error",
-      message:
-        "Telegram-сеанс не настроен. Сначала подключите SyntX на backend (npm run dev:login)."
-    });
-  }
-
-  const SYNX_CHAT_ID = process.env.SYNX_CHAT_ID;
-  if (!SYNX_CHAT_ID) {
-    return res.status(500).json({
-      status: "error",
-      message: "SYNX_CHAT_ID is not configured on the server"
-    });
-  }
-
-  // Проверяем доступность Firestore
-  if (!isFirestoreAvailable() || !db) {
-    Logger.error("Firestore is not available in /api/telegram/fetchVideoAndUploadToDrive");
-    const firebaseError = getFirebaseError();
-    return res.status(503).json({
-      status: "error",
-      message:
-        "Firebase Admin не настроен. Добавьте в backend/.env один из вариантов:\n" +
-        "1. FIREBASE_SERVICE_ACCOUNT='{\"type\":\"service_account\",...}' (полный JSON)\n" +
-        "2. FIREBASE_PROJECT_ID=..., FIREBASE_CLIENT_EMAIL=..., FIREBASE_PRIVATE_KEY=\"...\" (отдельные переменные)",
-      ...(firebaseError && process.env.NODE_ENV !== "production" && {
-        details: firebaseError.message
-      })
-    });
-  }
-
-  let tempFilePath: string | null = null;
-  let telegramClient: any = null;
-
+  // Используем общий сервис для скачивания и загрузки
   try {
-    // Проверяем, что пользователь имеет доступ к этому каналу и читаем данные канала
-    const channelRef = db
-      .collection("users")
-      .doc(userId)
-      .collection("channels")
-      .doc(channelId);
-    const channelSnap = await channelRef.get();
-
-    if (!channelSnap.exists) {
-      return res.status(404).json({
-        status: "error",
-        message: "Канал не найден"
-      });
-    }
-
-    const channelData = channelSnap.data() as {
-      name?: string;
-      googleDriveFolderId?: string;
-    };
-
-    // Определяем папку для загрузки: сначала из запроса, потом из канала, потом из .env
-    const folderIdFromRequest = googleDriveFolderId?.trim() || undefined;
-    const folderIdFromChannel = channelData.googleDriveFolderId?.trim() || undefined;
-    const defaultFolderId = process.env.GOOGLE_DRIVE_DEFAULT_PARENT?.trim() || undefined;
-
-    const finalFolderId = folderIdFromRequest || folderIdFromChannel || defaultFolderId;
-
-    if (!finalFolderId) {
-      return res.status(400).json({
-        status: "error",
-        message:
-          "Не указана папка для загрузки. Укажите googleDriveFolderId в запросе, в настройках канала или задайте GOOGLE_DRIVE_DEFAULT_PARENT в backend/.env"
-      });
-    }
-
-    Logger.info("Determining Google Drive folder", {
-      folderIdFromRequest: folderIdFromRequest || "not set",
-      folderIdFromChannel: folderIdFromChannel || "not set",
-      defaultFolderId: defaultFolderId || "not set",
-      finalFolderId
+    const result = await downloadAndUploadVideoToDrive({
+      channelId,
+      userId,
+      telegramMessageId,
+      videoTitle
     });
 
-    // Создаём Telegram-клиент
-    telegramClient = await createTelegramClientFromStringSession(stringSession);
-
-    try {
-      // Шаг 1: Скачиваем видео во временную папку
-      Logger.info("Step 1: Downloading video from Telegram to temp folder", {
-        chatId: SYNX_CHAT_ID,
-        messageId: telegramMessageId || "latest"
-      });
-
-      const downloadResult = await downloadTelegramVideoToTemp(
-        telegramClient,
-        SYNX_CHAT_ID,
-        telegramMessageId
-      );
-
-      tempFilePath = downloadResult.tempPath;
-
-      Logger.info("Video downloaded to temp file", {
-        tempPath: tempFilePath,
-        fileName: downloadResult.fileName,
-        messageId: downloadResult.messageId
-      });
-
-      // Шаг 2: Загружаем файл в Google Drive
-      Logger.info("Step 2: Uploading file to Google Drive", {
-        filePath: tempFilePath,
-        folderId: finalFolderId
-      });
-
-      // Формируем имя файла для Google Drive из videoTitle или названия канала
-      let driveFileName: string;
-      
-      if (videoTitle) {
-        // Используем название ролика из запроса
-        driveFileName = formatFileName(videoTitle);
-        Logger.info("Using video title for file name", {
-          originalTitle: videoTitle,
-          sanitizedFileName: driveFileName
-        });
-      } else {
-        // Fallback: используем название канала с timestamp
-        const safeName =
-          channelData.name?.replace(/[^\w\d\-]+/g, "_").slice(0, 50) ||
-          `channel_${channelId}`;
-        driveFileName = `${safeName}_${Date.now()}.mp4`;
-        Logger.info("Using channel name for file name (videoTitle not provided)", {
-          channelName: channelData.name,
-          fileName: driveFileName
-        });
-      }
-
-      // Пробуем использовать OAuth токен пользователя, если доступен
-      let driveResult;
-      try {
-        const userTokens = await getUserOAuthTokens(userId);
-        
-        if (userTokens?.googleDriveAccessToken) {
-          // Проверяем, не истёк ли токен
-          const now = Date.now();
-          const isExpired = userTokens.googleDriveTokenExpiry 
-            ? userTokens.googleDriveTokenExpiry < now 
-            : false;
-          
-          let accessToken = userTokens.googleDriveAccessToken;
-          
-          // Если токен истёк, обновляем его
-          if (isExpired && userTokens.googleDriveRefreshToken) {
-            Logger.info("OAuth token expired, refreshing...", { userId });
-            
-            const oauth2Client = new google.auth.OAuth2(
-              process.env.GOOGLE_OAUTH_CLIENT_ID,
-              process.env.GOOGLE_OAUTH_CLIENT_SECRET
-            );
-            oauth2Client.setCredentials({ refresh_token: userTokens.googleDriveRefreshToken });
-            
-            const { credentials } = await oauth2Client.refreshAccessToken();
-            accessToken = credentials.access_token!;
-            
-            // Сохраняем обновлённый токен
-            await updateUserAccessToken(
-              userId,
-              accessToken,
-              credentials.expiry_date || Date.now() + 3600000
-            );
-            
-            Logger.info("OAuth token refreshed", { userId });
-          }
-          
-          // Используем OAuth токен для загрузки
-          Logger.info("Using OAuth token for Google Drive upload", { userId });
-          driveResult = await uploadFileToDriveWithOAuth({
-            filePath: tempFilePath,
-            fileName: driveFileName,
-            mimeType: "video/mp4",
-            parentFolderId: finalFolderId,
-            accessToken: accessToken
-          });
-        } else {
-          // Fallback: используем Service Account (может не работать для загрузки)
-          Logger.warn("No OAuth token found, falling back to Service Account", { userId });
-          driveResult = await uploadFileToDrive({
-            filePath: tempFilePath,
-            fileName: driveFileName,
-            mimeType: "video/mp4",
-            parentFolderId: finalFolderId
-          });
-        }
-      } catch (oauthError: any) {
-        // Если OAuth не работает, пробуем Service Account
-        Logger.warn("OAuth upload failed, trying Service Account", {
-          error: oauthError?.message,
-          userId
-        });
-        
-        try {
-          driveResult = await uploadFileToDrive({
-            filePath: tempFilePath,
-            fileName: driveFileName,
-            mimeType: "video/mp4",
-            parentFolderId: finalFolderId
-          });
-        } catch (serviceAccountError: any) {
-          // Если и Service Account не работает, пробрасываем ошибку
-          throw new Error(
-            `GOOGLE_DRIVE_UPLOAD_FAILED: Не удалось загрузить файл. ` +
-            `OAuth ошибка: ${oauthError?.message}. ` +
-            `Service Account ошибка: ${serviceAccountError?.message}. ` +
-            `Пожалуйста, авторизуйтесь через Google OAuth: http://localhost:8080/api/auth/google`
-          );
-        }
-      }
-
-      Logger.info("File uploaded to Google Drive", {
-        fileId: driveResult.fileId,
-        webViewLink: driveResult.webViewLink
-      });
-
-      // Шаг 3: Удаляем временный файл
-      Logger.info("Step 3: Cleaning up temporary file", {
-        tempPath: tempFilePath
-      });
-
-      await cleanupTempFile(tempFilePath);
-      tempFilePath = null; // Помечаем, что файл удалён
-
-      // Шаг 4: Сохраняем информацию о видео в Firestore
-      try {
-        await channelRef.collection("generatedVideos").add({
-          driveFileId: driveResult.fileId,
-          driveWebViewLink: driveResult.webViewLink || null,
-          driveWebContentLink: driveResult.webContentLink || null,
-          createdAt: new Date(),
-          source: "syntx",
-          telegramMessageId: downloadResult.messageId
-        });
-
-        // Обновляем последнее видео в канале (опционально)
-        await channelRef.update({
-          lastVideoDriveFileId: driveResult.fileId,
-          lastVideoDriveLink: driveResult.webViewLink || null,
-          lastVideoUpdatedAt: new Date()
-        });
-      } catch (firestoreError) {
-        Logger.warn("Failed to save video info to Firestore", {
-          error: String(firestoreError)
-        });
-        // Не прерываем выполнение, так как файл уже загружен
-      }
-
-      Logger.info("Video successfully processed and uploaded to Google Drive", {
-        fileId: driveResult.fileId,
-        webViewLink: driveResult.webViewLink
-      });
-
-      // Возвращаем успешный ответ
+    if (result.success) {
       return res.json({
         status: "ok",
-        driveFileId: driveResult.fileId,
-        driveWebViewLink: driveResult.webViewLink,
-        fileId: driveResult.fileId, // Для обратной совместимости
-        webViewLink: driveResult.webViewLink, // Для обратной совместимости
-        webContentLink: driveResult.webContentLink,
-        fileName: driveFileName
+        driveFileId: result.driveFileId,
+        driveWebViewLink: result.driveWebViewLink,
+        fileId: result.driveFileId, // Для обратной совместимости
+        webViewLink: result.driveWebViewLink, // Для обратной совместимости
+        webContentLink: result.driveWebContentLink,
+        fileName: result.fileName
       });
-    } finally {
-      // Отключаемся от Telegram
-      try {
-        if (telegramClient) {
-          await telegramClient.disconnect();
-        }
-      } catch {
-        // ignore
-      }
-    }
-  } catch (err: any) {
-    const errorMessage = String(err?.message ?? err);
-    const errorStack = err?.stack;
+    } else {
+      // Обработка ошибок из сервиса
+      const errorMessage = result.error || "Unknown error";
 
-    Logger.error("Error in /api/telegram/fetchVideoAndUploadToDrive", {
-      error: errorMessage,
-      stack: errorStack,
-      userId,
-      channelId,
-      tempFilePath
-    });
-
-    // Удаляем временный файл в случае ошибки
-    if (tempFilePath) {
-      Logger.warn("Cleaning up temp file after error", { tempFilePath });
-      await cleanupTempFile(tempFilePath).catch((cleanupError) => {
-        Logger.error("Failed to cleanup temp file after error", {
-          tempPath: tempFilePath,
-          error: String(cleanupError)
-        });
-      });
-    }
-
-    // Обработка специфичных ошибок
-    if (errorMessage.includes("NO_VIDEO_FOUND")) {
+      // Обработка специфичных ошибок
+      if (errorMessage.includes("NO_VIDEO_FOUND")) {
       return res.status(404).json({
         status: "error",
         message:
@@ -1059,13 +786,26 @@ router.post("/fetchVideoAndUploadToDrive", authRequired, async (req, res) => {
       });
     }
 
-    // Общая ошибка
+      // Общая ошибка
+      return res.status(500).json({
+        status: "error",
+        message:
+          errorMessage ||
+          "Ошибка сервера при обработке видео. Попробуйте позже.",
+        ...(process.env.NODE_ENV !== "production" && { details: errorMessage })
+      });
+    }
+  } catch (err: any) {
+    const errorMessage = String(err?.message ?? err);
+    Logger.error("Error in /api/telegram/fetchVideoAndUploadToDrive", {
+      error: errorMessage,
+      userId,
+      channelId
+    });
+
     return res.status(500).json({
       status: "error",
-      message:
-        errorMessage ||
-        "Ошибка сервера при обработке видео. Попробуйте позже.",
-      ...(process.env.NODE_ENV !== "production" && { details: errorMessage })
+      message: errorMessage || "Ошибка сервера при обработке видео. Попробуйте позже."
     });
   }
 });

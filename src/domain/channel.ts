@@ -48,6 +48,9 @@ export interface Channel {
   autoSendEnabled?: boolean; // общий флаг: включена ли автоматика для канала
   timezone?: string; // IANA-таймзона пользователя, например "Asia/Almaty"
   autoSendSchedules?: ChannelAutoSendSchedule[]; // массив расписаний
+  // Автоматическое скачивание видео в Google Drive
+  autoDownloadToDriveEnabled?: boolean; // по умолчанию false
+  autoDownloadDelayMinutes?: number; // по умолчанию 10, min 1, max 60
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
@@ -108,6 +111,12 @@ export const channelConverter: FirestoreDataConverter<Channel> = {
     if (rest.telegramAutoScheduleEnabled !== undefined) {
       data.telegramAutoScheduleEnabled = rest.telegramAutoScheduleEnabled;
     }
+    if (rest.autoDownloadToDriveEnabled !== undefined) {
+      data.autoDownloadToDriveEnabled = rest.autoDownloadToDriveEnabled;
+    }
+    if (rest.autoDownloadDelayMinutes !== undefined) {
+      data.autoDownloadDelayMinutes = rest.autoDownloadDelayMinutes;
+    }
     
     return data;
   },
@@ -144,6 +153,8 @@ export const createEmptyChannel = (): Channel => {
     autoSendEnabled: false,
     timezone: undefined,
     autoSendSchedules: [],
+    autoDownloadToDriveEnabled: false,
+    autoDownloadDelayMinutes: 10,
     createdAt: now,
     updatedAt: now
   };
