@@ -16,6 +16,9 @@ import { loadSessionString } from "../telegram/sessionStore";
 import { createTelegramClientFromStringSession } from "../telegram/client";
 import type { Api } from "telegram";
 import { uploadVideoToDrive, uploadFileToDrive } from "../services/googleDrive";
+import { uploadFileToDriveWithOAuth } from "../services/googleDriveOAuth";
+import { getUserOAuthTokens, updateUserAccessToken } from "../repositories/userOAuthTokensRepo";
+import { google } from "googleapis";
 import {
   downloadTelegramVideoToTemp,
   cleanupTempFile
@@ -803,12 +806,86 @@ router.post("/fetchVideoAndUploadToDrive", authRequired, async (req, res) => {
         });
       }
 
-      const driveResult = await uploadFileToDrive({
-        filePath: tempFilePath,
-        fileName: driveFileName,
-        mimeType: "video/mp4",
-        parentFolderId: finalFolderId
-      });
+      // Пробуем использовать OAuth токен пользователя, если доступен
+      let driveResult;
+      try {
+        const userTokens = await getUserOAuthTokens(userId);
+        
+        if (userTokens?.googleDriveAccessToken) {
+          // Проверяем, не истёк ли токен
+          const now = Date.now();
+          const isExpired = userTokens.googleDriveTokenExpiry 
+            ? userTokens.googleDriveTokenExpiry < now 
+            : false;
+          
+          let accessToken = userTokens.googleDriveAccessToken;
+          
+          // Если токен истёк, обновляем его
+          if (isExpired && userTokens.googleDriveRefreshToken) {
+            Logger.info("OAuth token expired, refreshing...", { userId });
+            
+            const oauth2Client = new google.auth.OAuth2(
+              process.env.GOOGLE_OAUTH_CLIENT_ID,
+              process.env.GOOGLE_OAUTH_CLIENT_SECRET
+            );
+            oauth2Client.setCredentials({ refresh_token: userTokens.googleDriveRefreshToken });
+            
+            const { credentials } = await oauth2Client.refreshAccessToken();
+            accessToken = credentials.access_token!;
+            
+            // Сохраняем обновлённый токен
+            await updateUserAccessToken(
+              userId,
+              accessToken,
+              credentials.expiry_date || Date.now() + 3600000
+            );
+            
+            Logger.info("OAuth token refreshed", { userId });
+          }
+          
+          // Используем OAuth токен для загрузки
+          Logger.info("Using OAuth token for Google Drive upload", { userId });
+          driveResult = await uploadFileToDriveWithOAuth({
+            filePath: tempFilePath,
+            fileName: driveFileName,
+            mimeType: "video/mp4",
+            parentFolderId: finalFolderId,
+            accessToken: accessToken
+          });
+        } else {
+          // Fallback: используем Service Account (может не работать для загрузки)
+          Logger.warn("No OAuth token found, falling back to Service Account", { userId });
+          driveResult = await uploadFileToDrive({
+            filePath: tempFilePath,
+            fileName: driveFileName,
+            mimeType: "video/mp4",
+            parentFolderId: finalFolderId
+          });
+        }
+      } catch (oauthError: any) {
+        // Если OAuth не работает, пробуем Service Account
+        Logger.warn("OAuth upload failed, trying Service Account", {
+          error: oauthError?.message,
+          userId
+        });
+        
+        try {
+          driveResult = await uploadFileToDrive({
+            filePath: tempFilePath,
+            fileName: driveFileName,
+            mimeType: "video/mp4",
+            parentFolderId: finalFolderId
+          });
+        } catch (serviceAccountError: any) {
+          // Если и Service Account не работает, пробрасываем ошибку
+          throw new Error(
+            `GOOGLE_DRIVE_UPLOAD_FAILED: Не удалось загрузить файл. ` +
+            `OAuth ошибка: ${oauthError?.message}. ` +
+            `Service Account ошибка: ${serviceAccountError?.message}. ` +
+            `Пожалуйста, авторизуйтесь через Google OAuth: http://localhost:8080/api/auth/google`
+          );
+        }
+      }
 
       Logger.info("File uploaded to Google Drive", {
         fileId: driveResult.fileId,

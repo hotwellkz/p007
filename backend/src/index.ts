@@ -10,6 +10,7 @@ import promptRoutes from "./routes/promptRoutes";
 import googleDriveRoutes from "./routes/googleDriveRoutes";
 import debugRoutes from "./routes/debugRoutes";
 import testFirestoreRoutes from "./routes/testFirestoreRoutes";
+import authRoutes from "./routes/authRoutes";
 import { processAutoSendTick } from "./services/autoSendScheduler";
 import { Logger } from "./utils/logger";
 import { getFirestoreInfo, isFirestoreAvailable } from "./services/firebaseAdmin";
@@ -24,6 +25,7 @@ app.use(
   })
 );
 app.use(express.json());
+app.use(express.static("public")); // Для статических файлов (HTML страница для OAuth)
 
 app.use("/api/telegram", telegramRoutes);
 app.use("/api/cron", cronRoutes);
@@ -31,6 +33,7 @@ app.use("/api/prompt", promptRoutes);
 app.use("/api/google-drive", googleDriveRoutes);
 app.use("/api/debug", debugRoutes);
 app.use("/api/test", testFirestoreRoutes);
+app.use("/api/auth", authRoutes);
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true });

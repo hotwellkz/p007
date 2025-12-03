@@ -56,7 +56,7 @@ async function validateFolderAccess(
 
     const folderInfo = await drive.files.get({
       fileId: folderId,
-      fields: "id, name, mimeType, permissions"
+      fields: "id, name, mimeType, permissions, owners, shared"
     });
 
     // Проверяем, что это действительно папка
@@ -125,7 +125,8 @@ export async function uploadVideoToDrive(
     );
   }
 
-  const drive = getDriveClient();
+  // Используем полный scope для загрузки файлов в расшаренные папки
+  const drive = getDriveClient(true);
 
   // Определяем, какую папку использовать: сначала пробуем из канала, если не найдена - используем defaultParent
   let parentFolderId: string;
@@ -331,7 +332,8 @@ export async function uploadFileToDrive(params: {
     );
   }
 
-  const drive = getDriveClient();
+  // Используем полный scope для загрузки файлов в расшаренные папки
+  const drive = getDriveClient(true);
 
   // Определяем, какую папку использовать
   let finalParentFolderId: string;
